@@ -6,6 +6,8 @@ require (
 	github.com/bombsimon/logrusr/v4 v4.1.0
 	github.com/creack/pty v1.1.23
 	github.com/go-logr/logr v1.4.2
+	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
