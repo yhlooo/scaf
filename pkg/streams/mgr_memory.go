@@ -20,8 +20,12 @@ type InMemoryManager struct {
 
 var _ Manager = &InMemoryManager{}
 
-// CreateStream 创建流
-func (mgr *InMemoryManager) CreateStream(_ context.Context, stream Stream) (*StreamInstance, error) {
+// CreateStream 创建并启动流
+func (mgr *InMemoryManager) CreateStream(ctx context.Context, stream Stream) (*StreamInstance, error) {
+	if err := stream.Start(ctx); err != nil {
+		return nil, fmt.Errorf("start stream error: %w", err)
+	}
+
 	mgr.streamsLock.Lock()
 	defer mgr.streamsLock.Unlock()
 	ins := NewSteamInstance(stream)
@@ -61,13 +65,24 @@ func (mgr *InMemoryManager) GetStream(_ context.Context, uid UID) (*StreamInstan
 	return stream.Clone(), nil
 }
 
-// DeleteStream 删除流
-func (mgr *InMemoryManager) DeleteStream(_ context.Context, uid UID) error {
-	mgr.streamsLock.Lock()
-	defer mgr.streamsLock.Unlock()
-	if _, ok := mgr.streams[uid]; !ok {
+// DeleteStream 停止并删除流
+func (mgr *InMemoryManager) DeleteStream(ctx context.Context, uid UID) error {
+	mgr.streamsLock.RLock()
+	stream, ok := mgr.streams[uid]
+	mgr.streamsLock.RUnlock()
+	if !ok {
 		return fmt.Errorf("%w: stream %q not found", ErrStreamNotFound, uid)
 	}
+
+	// 停止流
+	if err := stream.Stream.Stop(ctx); err != nil {
+		return fmt.Errorf("stop stream error: %w", err)
+	}
+
+	// 删除流
+	mgr.streamsLock.Lock()
 	delete(mgr.streams, uid)
+	mgr.streamsLock.Unlock()
+
 	return nil
 }

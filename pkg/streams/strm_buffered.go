@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	bufferedStreamLoggerName    = "buffered-stream"
-	bufferedStreamMaxBufferLen  = 1 << 20 // 1MBi
-	bufferedStreamReadSize      = 4 << 10 // 4Ki
-	bufferedStreamRetryInterval = time.Second
+	bufferedStreamLoggerName       = "buffered-stream"
+	bufferedStreamBufferChannelLen = 256     // 最大 256 * 4Ki = 1MBi
+	bufferedStreamReadSize         = 4 << 10 // 4Ki
+	bufferedStreamRetryInterval    = time.Second
 )
 
 // NewBufferedStream 创建 BufferedStream
@@ -25,10 +25,13 @@ func NewBufferedStream() *BufferedStream {
 
 // BufferedStream 带缓冲的流
 type BufferedStream struct {
-	lock   sync.RWMutex
-	active bool
-	connA  Connection
-	connB  Connection
+	lock        sync.RWMutex
+	active      bool
+	connA       Connection
+	connABuffCh chan []byte
+
+	connB       Connection
+	connBBuffCh chan []byte
 }
 
 var _ Stream = &BufferedStream{}
@@ -63,10 +66,18 @@ func (s *BufferedStream) Join(ctx context.Context, conn Connection) error {
 	switch {
 	case s.connA == nil:
 		s.connA = conn
-		go s.handleConn(ctx, &s.connA, &s.connB)
+		if s.connBBuffCh == nil {
+			s.connBBuffCh = make(chan []byte, bufferedStreamBufferChannelLen)
+		}
+		go s.flushBuff(ctx, s.connABuffCh, s.connA)
+		go s.handleConn(ctx, &s.connA, &s.connB, s.connBBuffCh)
 	case s.connB == nil:
 		s.connB = conn
-		go s.handleConn(ctx, &s.connB, &s.connA)
+		if s.connABuffCh == nil {
+			s.connABuffCh = make(chan []byte, bufferedStreamBufferChannelLen)
+		}
+		go s.flushBuff(ctx, s.connBBuffCh, s.connB)
+		go s.handleConn(ctx, &s.connB, &s.connA, s.connABuffCh)
 	default:
 		// 满员了，不能加入了
 		return fmt.Errorf("full stream")
@@ -76,11 +87,12 @@ func (s *BufferedStream) Join(ctx context.Context, conn Connection) error {
 }
 
 // handleConn 处理连接
-func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connection) {
+func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connection, writeBuffCh chan<- []byte) {
 	logger := logr.FromContextOrDiscard(ctx)
 
 	s.lock.RLock()
 	if *connRP == nil {
+		s.lock.RUnlock()
 		return
 	}
 	connR := *connRP
@@ -92,9 +104,8 @@ func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connect
 		s.lock.Unlock()
 	}()
 
-	buf := &bytes.Buffer{}
+	tmp := make([]byte, bufferedStreamReadSize)
 	for {
-		tmp := make([]byte, bufferedStreamReadSize)
 		n, err := connR.Read(tmp)
 		if err != nil {
 			if err == io.EOF {
@@ -111,35 +122,36 @@ func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connect
 		s.lock.RUnlock()
 
 		if connW == nil {
-			// 另一个连接还未加入，先写到缓存
-			if buf.Len()+n > bufferedStreamMaxBufferLen {
-				// 缓冲区数据太多了，读出来一点
-				ignore := make([]byte, bufferedStreamReadSize)
-				if _, err = buf.Read(ignore); err != nil {
-					logger.Error(err, "read from buffer error")
-					time.Sleep(bufferedStreamRetryInterval)
-					continue
-				}
-			}
-			if _, err := buf.Write(tmp[:n]); err != nil {
-				logger.Error(err, "write to buffer error")
-				time.Sleep(bufferedStreamRetryInterval)
-				continue
+			// 另一个连接还未加入，先写到缓冲区
+			select {
+			case writeBuffCh <- bytes.Clone(tmp[:n]):
+			default:
 			}
 			continue
 		}
 
 		// 另一个连接已经加入
-		// 先发送缓冲区
-		if buf.Len() > 0 {
-			if _, err := io.Copy(connW, buf); err != nil {
-				logger.Error(err, "copy from buffer to connection error")
-			}
-			buf.Reset()
-		}
-		// 然后发送读取的数据
 		if _, err := connW.Write(tmp[:n]); err != nil {
 			logger.Error(err, "write to connection error")
+		}
+	}
+}
+
+// flushBuff 将缓冲区的内容刷到连接
+func (s *BufferedStream) flushBuff(ctx context.Context, buffCh <-chan []byte, conn Connection) {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	for {
+		select {
+		case content, ok := <-buffCh:
+			if !ok {
+				return
+			}
+			if _, err := conn.Write(content); err != nil {
+				logger.Error(err, "write to connection error")
+			}
+		default:
+			return
 		}
 	}
 }
@@ -159,11 +171,19 @@ func (s *BufferedStream) Stop(ctx context.Context) error {
 		}
 		s.connA = nil
 	}
+	if s.connABuffCh != nil {
+		close(s.connABuffCh)
+		s.connABuffCh = nil
+	}
 	if s.connB != nil {
 		if err := s.connB.Close(); err != nil {
 			logger.Error(err, "close connection B error")
 		}
 		s.connB = nil
+	}
+	if s.connBBuffCh != nil {
+		close(s.connBBuffCh)
+		s.connBBuffCh = nil
 	}
 	s.active = false
 
