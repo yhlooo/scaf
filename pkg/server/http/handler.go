@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
@@ -116,19 +117,31 @@ func (h *httpHandlers) HandleGetStream(w http.ResponseWriter, req *http.Request)
 	}
 
 	// 升级连接加入流
-	if req.Header.Get("Connection") == "upgrade" {
+	if strings.ToLower(req.Header.Get("Connection")) == "upgrade" {
 		switch {
 		case websocket.IsWebSocketUpgrade(req):
-			upgrader := &websocket.Upgrader{}
+			upgrader := &websocket.Upgrader{
+				CheckOrigin: func(r *http.Request) bool {
+					return true
+				},
+			}
 			conn, err := upgrader.Upgrade(w, req, nil)
 			if err != nil {
-				logger.Error(err, "upgrade websocket error")
-				responseStatus(ctx, w, apierrors.NewInternalServerError(err))
+				logger.Error(err, "websocket upgrade error")
+				responseStatus(ctx, w, apierrors.NewInternalServerError(
+					fmt.Errorf("websocket upgrade error: %w", err),
+				))
 				return
 			}
 			if err := ins.Stream.Join(ctx, streams.NewWebSocketConnection(conn)); err != nil {
 				logger.Error(err, "join stream error")
-				responseStatus(ctx, w, apierrors.NewInternalServerError(err))
+				errMsg, _ := json.Marshal(apierrors.NewInternalServerError(fmt.Errorf("join stream error: %w", err)))
+				if err := conn.WriteMessage(websocket.TextMessage, errMsg); err != nil {
+					logger.Error(err, "send message error")
+				}
+				if err := conn.Close(); err != nil {
+					logger.Error(err, "close websocket connection error")
+				}
 				return
 			}
 		default:
