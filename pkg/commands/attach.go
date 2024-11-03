@@ -27,6 +27,7 @@ func NewAttachCommandWithOptions(opts *options.AttachOptions) *cobra.Command {
 				Client: clientscommon.Options{
 					Server: opts.Server,
 				},
+				TTY: opts.TTY,
 			})
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)

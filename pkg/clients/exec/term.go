@@ -16,6 +16,7 @@ import (
 // TerminalOptions Terminal 运行选项
 type TerminalOptions struct {
 	Client common.Options
+	TTY    bool
 }
 
 // NewTerminal 创建 Terminal
@@ -26,12 +27,14 @@ func NewTerminal(opts TerminalOptions) (*Terminal, error) {
 	}
 	return &Terminal{
 		Client: client,
+		tty:    opts.TTY,
 	}, nil
 }
 
 // Terminal exec 终端
 type Terminal struct {
 	*common.Client
+	tty bool
 }
 
 // Run 与服务端建立连接并转发输入输出
@@ -56,16 +59,18 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 	}
 
 	// 设置输入流
-	if f, ok := input.(*os.File); ok {
-		// 将输入流设置为 raw 格式
-		oldState, err := term.MakeRaw(int(f.Fd()))
-		if err != nil {
-			return fmt.Errorf("make input to raw error: %w", err)
+	if t.tty {
+		if f, ok := input.(*os.File); ok {
+			// 将输入流设置为 raw 格式
+			oldState, err := term.MakeRaw(int(f.Fd()))
+			if err != nil {
+				return fmt.Errorf("make input to raw error: %w", err)
+			}
+			defer func() {
+				// 还原输入流
+				_ = term.Restore(int(f.Fd()), oldState)
+			}()
 		}
-		defer func() {
-			// 还原输入流
-			_ = term.Restore(int(f.Fd()), oldState)
-		}()
 	}
 
 	termConn := streams.NewPassthroughConnection(input, output)
