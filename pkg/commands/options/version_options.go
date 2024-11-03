@@ -17,7 +17,7 @@ func NewDefaultVersionOptions() VersionOptions {
 type VersionOptions struct {
 	// 输出格式
 	// yaml 或 json
-	OutputFormat string
+	OutputFormat string `json:"outputFormat,omitempty" yaml:"outputFormat,omitempty"`
 }
 
 // Validate 校验选项

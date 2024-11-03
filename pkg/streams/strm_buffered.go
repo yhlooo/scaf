@@ -20,18 +20,22 @@ const (
 
 // NewBufferedStream 创建 BufferedStream
 func NewBufferedStream() *BufferedStream {
-	return &BufferedStream{}
+	return &BufferedStream{
+		eventCh: make(chan ConnectionEvent),
+	}
 }
 
 // BufferedStream 带缓冲的流
 type BufferedStream struct {
-	lock        sync.RWMutex
-	active      bool
+	lock   sync.RWMutex
+	active bool
+
 	connA       Connection
 	connABuffCh chan []byte
-
 	connB       Connection
 	connBBuffCh chan []byte
+
+	eventCh chan ConnectionEvent
 }
 
 var _ Stream = &BufferedStream{}
@@ -83,6 +87,11 @@ func (s *BufferedStream) Join(ctx context.Context, conn Connection) error {
 		return fmt.Errorf("full stream")
 	}
 
+	select {
+	case s.eventCh <- ConnectionEvent{Type: JoinedEvent, Connection: conn}:
+	default:
+	}
+
 	return nil
 }
 
@@ -101,6 +110,12 @@ func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connect
 		_ = connR.Close()
 		s.lock.Lock()
 		*connRP = nil
+		if s.eventCh != nil {
+			select {
+			case s.eventCh <- ConnectionEvent{Type: LeftEvent, Connection: connR}:
+			default:
+			}
+		}
 		s.lock.Unlock()
 	}()
 
@@ -186,6 +201,13 @@ func (s *BufferedStream) Stop(ctx context.Context) error {
 		s.connBBuffCh = nil
 	}
 	s.active = false
+	close(s.eventCh)
+	s.eventCh = nil
 
 	return nil
+}
+
+// ConnectionEvents 获取连接事件通道
+func (s *BufferedStream) ConnectionEvents() <-chan ConnectionEvent {
+	return s.eventCh
 }

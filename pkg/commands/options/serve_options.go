@@ -11,7 +11,7 @@ func NewDefaultServeOptions() ServeOptions {
 
 // ServeOptions serve 子命令选项
 type ServeOptions struct {
-	HTTPAddr string
+	HTTPAddr string `json:"httpAddr,omitempty" yaml:"httpAddr,omitempty"`
 }
 
 // AddPFlags 绑定选项到参数

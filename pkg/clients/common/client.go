@@ -120,9 +120,15 @@ func (c *Client) DeleteStream(ctx context.Context, name string) error {
 
 // ConnectStream 连接到流
 func (c *Client) ConnectStream(ctx context.Context, name string) (streams.Connection, error) {
-	conn, resp, connErr := websocket.DefaultDialer.DialContext(ctx, c.opts.Server+"/v1/streams/"+name, nil)
+	server := c.opts.Server
+	server = strings.Replace(server, "https://", "wss://", 1)
+	server = strings.Replace(server, "http://", "ws://", 1)
+	conn, resp, connErr := websocket.DefaultDialer.DialContext(ctx, server+"/v1/streams/"+name, nil)
 	if connErr == nil {
 		return streams.NewWebSocketConnection(conn), nil
+	}
+	if resp == nil {
+		return nil, connErr
 	}
 	defer func() {
 		_ = resp.Body.Close()

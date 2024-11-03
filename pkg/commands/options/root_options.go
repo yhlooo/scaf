@@ -5,6 +5,8 @@ func NewDefaultOptions() Options {
 	return Options{
 		Global:  NewDefaultGlobalOptions(),
 		Serve:   NewDefaultServeOptions(),
+		Attach:  NewDefaultAttachOptions(),
+		Exec:    NewDefaultExecOptions(),
 		Version: NewDefaultVersionOptions(),
 	}
 }
@@ -16,6 +18,10 @@ type Options struct {
 
 	// serve 子命令选项
 	Serve ServeOptions `json:"serve,omitempty" yaml:"serve,omitempty"`
+	// attach 子命令选项
+	Attach AttachOptions `json:"attach,omitempty" yaml:"attach,omitempty"`
+	// exec 子命令选项
+	Exec ExecOptions `json:"exec,omitempty" yaml:"exec,omitempty"`
 	// version 子命令选项
 	Version VersionOptions `json:"version,omitempty" yaml:"version,omitempty"`
 }

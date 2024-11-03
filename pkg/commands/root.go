@@ -44,6 +44,8 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 	// 添加子命令
 	cmd.AddCommand(
 		NewServeCommandWithOptions(&opts.Serve),
+		NewAttachCommandWithOptions(&opts.Attach),
+		NewExecCommandWithOptions(&opts.Exec),
 		NewVersionCommandWithOptions(&opts.Version),
 	)
 
