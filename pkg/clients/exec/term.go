@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/go-logr/logr"
 	"golang.org/x/term"
@@ -59,10 +61,12 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 	}
 
 	// 设置输入流
+	var stdinFd int
 	if t.tty {
 		if f, ok := input.(*os.File); ok {
 			// 将输入流设置为 raw 格式
-			oldState, err := term.MakeRaw(int(f.Fd()))
+			stdinFd = int(f.Fd())
+			oldState, err := term.MakeRaw(stdinFd)
 			if err != nil {
 				return fmt.Errorf("make input to raw error: %w", err)
 			}
@@ -70,6 +74,13 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 				// 还原输入流
 				_ = term.Restore(int(f.Fd()), oldState)
 			}()
+			// 设置窗口大小
+			w, h, err := term.GetSize(stdinFd)
+			if err != nil {
+				logger.Error(err, "get terminal size error")
+			} else {
+				_ = sendResizeANSI(serverConn, h, w)
+			}
 		}
 	}
 
@@ -78,6 +89,9 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 		return fmt.Errorf("join terminal io connection to local stream error: %w", err)
 	}
 
+	resizeCh := make(chan os.Signal, 1)
+	signal.Notify(resizeCh, syscall.SIGWINCH)
+	defer close(resizeCh)
 	for {
 		select {
 		case <-ctx.Done():
@@ -96,6 +110,22 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 			} else {
 				return fmt.Errorf("server connection closed")
 			}
+		case <-resizeCh:
+			if stdinFd != 0 {
+				w, h, err := term.GetSize(stdinFd)
+				if err != nil {
+					logger.Error(err, "get terminal size error")
+					continue
+				}
+				_ = sendResizeANSI(serverConn, h, w)
+			}
 		}
 	}
+}
+
+// sendResizeANSI 发送修改窗口大小的 ANSI 序列
+// 自定义序列 PM<height>;<width>s
+func sendResizeANSI(w io.Writer, height, width int) error {
+	_, err := w.Write([]byte(fmt.Sprintf("\x1b^%d;%ds", height, width)))
+	return err
 }

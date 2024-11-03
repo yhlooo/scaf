@@ -61,8 +61,9 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) e
 		if err != nil {
 			return fmt.Errorf("start command error: %w", err)
 		}
-		if err := s.Join(ctx, streams.NewPassthroughConnection(ptmx, ptmx)); err != nil {
-			_ = ptmx.Close()
+		ptyConn := streams.NewPTYConnection(ptmx)
+		if err := s.Join(ctx, ptyConn); err != nil {
+			_ = ptyConn.Close()
 			return fmt.Errorf("join exec io connection to local stream error: %w", err)
 		}
 		return cmd.Wait()
@@ -78,9 +79,9 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) e
 	cmd.Stdin = inputR
 	cmd.Stdout = outputW
 	cmd.Stderr = outputW
-	if err := s.Join(ctx, streams.NewPassthroughConnection(outputR, inputW)); err != nil {
-		_ = outputR.Close()
-		_ = inputW.Close()
+	execConn := streams.NewPassthroughConnection(outputR, inputW)
+	if err := s.Join(ctx, execConn); err != nil {
+		_ = execConn.Close()
 		return fmt.Errorf("join exec io connection to local stream error: %w", err)
 	}
 

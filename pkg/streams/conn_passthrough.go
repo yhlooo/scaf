@@ -26,23 +26,23 @@ type PassthroughConnection struct {
 }
 
 // Read 从输入读
-func (conn *PassthroughConnection) Read(b []byte) (n int, err error) {
+func (conn *PassthroughConnection) Read(p []byte) (n int, err error) {
 	conn.lock.RLock()
 	defer conn.lock.RUnlock()
 	if conn.closed {
 		return 0, io.EOF
 	}
-	return conn.input.Read(b)
+	return conn.input.Read(p)
 }
 
 // Write 写到输出
-func (conn *PassthroughConnection) Write(b []byte) (n int, err error) {
+func (conn *PassthroughConnection) Write(p []byte) (n int, err error) {
 	conn.lock.RLock()
 	defer conn.lock.RUnlock()
 	if conn.closed {
 		return 0, io.EOF
 	}
-	return conn.output.Write(b)
+	return conn.output.Write(p)
 }
 
 // Close 关闭连接
