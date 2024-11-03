@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -53,8 +54,27 @@ func (h *httpHandlers) HandleCreateStream(w http.ResponseWriter, req *http.Reque
 	req = req.WithContext(ctx)
 	logger.Info("request received")
 
+	defer func() {
+		_ = req.Body.Close()
+	}()
+	reqBody, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
+	if err != nil {
+		logger.Error(err, "read request error")
+		responseStatus(ctx, w, apierrors.NewInternalServerError(fmt.Errorf("read request error: %w", err)))
+		return
+	}
+	stream := &streamv1.Stream{}
+	if err := json.Unmarshal(reqBody, stream); err != nil {
+		logger.Error(err, "unmarshal request error")
+		responseStatus(ctx, w, apierrors.NewBadRequestError(fmt.Errorf("parse request error: %w", err)))
+		return
+	}
+
 	s := streams.NewBufferedStream()
-	ins, err := h.streamMgr.CreateStream(ctx, s)
+	ins, err := h.streamMgr.CreateStream(ctx, &streams.StreamInstance{
+		StopPolicy: streams.StreamStopPolicy(stream.Spec.StopPolicy),
+		Stream:     s,
+	})
 	if err != nil {
 		logger.Error(err, "create stream error")
 		responseStatus(ctx, w, apierrors.NewInternalServerError(err))
@@ -222,6 +242,11 @@ func newStreamAPIObject(ins *streams.StreamInstance) *streamv1.Stream {
 			Name: string(ins.UID), // TODO: 流名暂不支持自定义
 			UID:  string(ins.UID),
 		},
-		Token: "", // TODO: ...
+		Spec: streamv1.StreamSpec{
+			StopPolicy: streamv1.StreamStopPolicy(ins.StopPolicy),
+		},
+		Status: streamv1.StreamStatus{
+			Token: "", // TODO: ...
+		},
 	}
 }

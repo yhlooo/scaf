@@ -70,9 +70,9 @@ type Client struct {
 }
 
 // CreateStream 创建流
-func (c *Client) CreateStream(ctx context.Context) (*streamv1.Stream, error) {
+func (c *Client) CreateStream(ctx context.Context, stream *streamv1.Stream) (*streamv1.Stream, error) {
 	ret := &streamv1.Stream{}
-	err := c.request(ctx, http.MethodPost, "/v1/streams", nil, ret)
+	err := c.request(ctx, http.MethodPost, "/v1/streams", stream, ret)
 	if err != nil {
 		return nil, err
 	}

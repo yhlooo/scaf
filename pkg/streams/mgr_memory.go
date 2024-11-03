@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 )
 
 // NewInMemoryManager 创建 InMemoryManager
@@ -21,18 +24,28 @@ type InMemoryManager struct {
 var _ Manager = &InMemoryManager{}
 
 // CreateStream 创建并启动流
-func (mgr *InMemoryManager) CreateStream(ctx context.Context, stream Stream) (*StreamInstance, error) {
-	if err := stream.Start(ctx); err != nil {
+func (mgr *InMemoryManager) CreateStream(ctx context.Context, ins *StreamInstance) (*StreamInstance, error) {
+	ins = ins.Clone()
+
+	if err := ins.Stream.Start(ctx); err != nil {
 		return nil, fmt.Errorf("start stream error: %w", err)
 	}
 
 	mgr.streamsLock.Lock()
 	defer mgr.streamsLock.Unlock()
-	ins := NewSteamInstance(stream)
+	ins.UID = UID(uuid.New().String())
 	if mgr.streams == nil {
 		mgr.streams = make(map[UID]*StreamInstance)
 	}
 	mgr.streams[ins.UID] = ins
+
+	switch ins.StopPolicy {
+	case OnFirstConnectionLeft:
+		go stopStreamOnFirstConnectionLeft(ctx, ins)
+	case OnBothConnectionsLeft:
+		go stopStreamOnBothConnectionsLeft(ctx, ins)
+	}
+
 	return ins.Clone(), nil
 }
 
@@ -85,4 +98,35 @@ func (mgr *InMemoryManager) DeleteStream(ctx context.Context, uid UID) error {
 	mgr.streamsLock.Unlock()
 
 	return nil
+}
+
+// stopStreamOnFirstConnectionLeft 等待第一次连接离开时结束流
+func stopStreamOnFirstConnectionLeft(ctx context.Context, ins *StreamInstance) {
+	logger := logr.FromContextOrDiscard(ctx)
+	for event := range ins.Stream.ConnectionEvents() {
+		if event.Type == LeftEvent {
+			if err := ins.Stream.Stop(ctx); err != nil {
+				logger.Error(err, fmt.Sprintf("stop stream %q error", ins.UID))
+			}
+		}
+	}
+}
+
+// stopStreamOnBothConnectionsLeft 等待所有连接都离开时结束流
+func stopStreamOnBothConnectionsLeft(ctx context.Context, ins *StreamInstance) {
+	logger := logr.FromContextOrDiscard(ctx)
+	connCnt := 0
+	for event := range ins.Stream.ConnectionEvents() {
+		switch event.Type {
+		case JoinedEvent:
+			connCnt++
+		case LeftEvent:
+			connCnt--
+		}
+		if connCnt <= 0 {
+			if err := ins.Stream.Stop(ctx); err != nil {
+				logger.Error(err, fmt.Sprintf("stop stream %q error", ins.UID))
+			}
+		}
+	}
 }

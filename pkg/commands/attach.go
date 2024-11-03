@@ -7,9 +7,11 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
+	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 	clientscommon "github.com/yhlooo/scaf/pkg/clients/common"
 	clientsexec "github.com/yhlooo/scaf/pkg/clients/exec"
 	"github.com/yhlooo/scaf/pkg/commands/options"
+	"github.com/yhlooo/scaf/pkg/streams"
 )
 
 // NewAttachCommandWithOptions 基于选项创建 attach 子命令
@@ -36,7 +38,11 @@ func NewAttachCommandWithOptions(opts *options.AttachOptions) *cobra.Command {
 			// 创建流
 			streamName := opts.Stream
 			if streamName == "" {
-				stream, err := client.Client.CreateStream(ctx)
+				stream, err := client.Client.CreateStream(ctx, &streamv1.Stream{
+					Spec: streamv1.StreamSpec{
+						StopPolicy: streamv1.StreamStopPolicy(streams.OnFirstConnectionLeft),
+					},
+				})
 				if err != nil {
 					return fmt.Errorf("create stream error: %w", err)
 				}

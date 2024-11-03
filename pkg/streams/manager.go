@@ -2,14 +2,12 @@ package streams
 
 import (
 	"context"
-
-	"github.com/google/uuid"
 )
 
 // Manager 流管理器
 type Manager interface {
 	// CreateStream 创建流
-	CreateStream(ctx context.Context, stream Stream) (*StreamInstance, error)
+	CreateStream(ctx context.Context, stream *StreamInstance) (*StreamInstance, error)
 	// ListStreams 列出流
 	ListStreams(ctx context.Context) ([]*StreamInstance, error)
 	// GetStream 获取流
@@ -21,24 +19,30 @@ type Manager interface {
 // UID 流实例唯一 ID
 type UID string
 
-// NewSteamInstance 创建流实例
-func NewSteamInstance(stream Stream) *StreamInstance {
-	return &StreamInstance{
-		UID:    UID(uuid.New().String()),
-		Stream: stream,
-	}
-}
-
 // StreamInstance 流实例
 type StreamInstance struct {
-	UID    UID
-	Stream Stream
+	UID        UID
+	StopPolicy StreamStopPolicy
+	Stream     Stream
 }
+
+// StreamStopPolicy 流停止策略
+type StreamStopPolicy string
+
+const (
+	// OnFirstConnectionLeft 第一次连接断开时停止
+	OnFirstConnectionLeft StreamStopPolicy = "OnFirstConnectionLeft"
+	// OnBothConnectionsLeft 两个连接都断开时停止
+	OnBothConnectionsLeft StreamStopPolicy = "OnBothConnectionsLeft"
+	// OnDelete 流被删除时停止
+	OnDelete StreamStopPolicy = "OnDelete"
+)
 
 // Clone 返回流实例的一个拷贝
 func (ins *StreamInstance) Clone() *StreamInstance {
 	return &StreamInstance{
-		UID:    ins.UID,
-		Stream: ins.Stream,
+		UID:        ins.UID,
+		StopPolicy: ins.StopPolicy,
+		Stream:     ins.Stream,
 	}
 }
