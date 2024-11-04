@@ -12,7 +12,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/yhlooo/scaf/pkg/clients/common"
-	"github.com/yhlooo/scaf/pkg/streams"
 )
 
 // TerminalOptions Terminal 运行选项
@@ -45,20 +44,13 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 	logger := logr.FromContextOrDiscard(ctx)
 
 	// 与服务端建立连接
-	s := streams.NewBufferedStream()
-	if err := s.Start(ctx); err != nil {
-		return fmt.Errorf("start local stream error: %w", err)
-	}
-	defer func() {
-		_ = s.Stop(ctx)
-	}()
 	serverConn, err := t.Client.ConnectStream(ctx, streamName)
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
-	if err := s.Join(ctx, serverConn); err != nil {
-		return fmt.Errorf("join server connection to local stream error: %w", err)
-	}
+	defer func() {
+		_ = serverConn.Close()
+	}()
 
 	// 设置输入流
 	var stdinFd int
@@ -84,10 +76,22 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 		}
 	}
 
-	termConn := streams.NewPassthroughConnection(input, output)
-	if err := s.Join(ctx, termConn); err != nil {
-		return fmt.Errorf("join terminal io connection to local stream error: %w", err)
-	}
+	// 下行
+	downDone := make(chan struct{})
+	go func() {
+		defer close(downDone)
+		if _, err := io.Copy(serverConn, input); err != nil {
+			logger.Error(err, "read from server error")
+		}
+	}()
+	// 上行
+	upDone := make(chan struct{})
+	go func() {
+		defer close(upDone)
+		if _, err := io.Copy(output, serverConn); err != nil {
+			logger.Error(err, "write to server error")
+		}
+	}()
 
 	resizeCh := make(chan os.Signal, 1)
 	signal.Notify(resizeCh, syscall.SIGWINCH)
@@ -96,20 +100,10 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case e, ok := <-s.ConnectionEvents():
-			if !ok {
-				return fmt.Errorf("stream closed")
-			}
-			if e.Type != streams.LeftEvent {
-				logger.V(1).Info(fmt.Sprintf("received connection event: %s", e.Type))
-				continue
-			}
-			if e.Connection == termConn {
-				logger.V(1).Info("terminal closed")
-				return nil
-			} else {
-				return fmt.Errorf("server connection closed")
-			}
+		case <-upDone:
+			return nil
+		case <-downDone:
+			return nil
 		case <-resizeCh:
 			if stdinFd != 0 {
 				w, h, err := term.GetSize(stdinFd)

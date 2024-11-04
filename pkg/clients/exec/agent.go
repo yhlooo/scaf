@@ -7,6 +7,7 @@ import (
 	"os/exec"
 
 	"github.com/creack/pty"
+	"github.com/go-logr/logr"
 
 	"github.com/yhlooo/scaf/pkg/clients/common"
 	"github.com/yhlooo/scaf/pkg/streams"
@@ -39,21 +40,16 @@ type Agent struct {
 // Run 与服务端建立连接并运行命令
 // 阻塞直到运行结束
 func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
 	// 与服务端建立连接
-	s := streams.NewBufferedStream()
-	if err := s.Start(ctx); err != nil {
-		return fmt.Errorf("start local stream error: %w", err)
-	}
-	defer func() {
-		_ = s.Stop(ctx)
-	}()
 	serverConn, err := agent.Client.ConnectStream(ctx, streamName)
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
-	if err := s.Join(ctx, serverConn); err != nil {
-		return fmt.Errorf("join server connection to local stream error: %w", err)
-	}
+	defer func() {
+		_ = serverConn.Close()
+	}()
 
 	if agent.tty {
 		// 在 pty 中运行
@@ -62,28 +58,32 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) e
 			return fmt.Errorf("start command error: %w", err)
 		}
 		ptyConn := streams.NewPTYConnection(ptmx)
-		if err := s.Join(ctx, ptyConn); err != nil {
+		defer func() {
 			_ = ptyConn.Close()
-			return fmt.Errorf("join exec io connection to local stream error: %w", err)
-		}
+		}()
+
+		// 下行
+		go func() {
+			if _, err := io.Copy(serverConn, ptyConn); err != nil {
+				logger.Error(err, "read from server error")
+			}
+			_ = cmd.Process.Kill()
+		}()
+		// 上行
+		go func() {
+			if _, err := io.Copy(ptyConn, serverConn); err != nil {
+				logger.Error(err, "write to server error")
+			}
+			_ = cmd.Process.Kill()
+		}()
+
 		return cmd.Wait()
 	}
 
 	// 设置命令输入输出
-	inputR, inputW := io.Pipe()
-	outputR, outputW := io.Pipe()
-	defer func() {
-		_ = inputR.Close()
-		_ = outputW.Close()
-	}()
-	cmd.Stdin = inputR
-	cmd.Stdout = outputW
-	cmd.Stderr = outputW
-	execConn := streams.NewPassthroughConnection(outputR, inputW)
-	if err := s.Join(ctx, execConn); err != nil {
-		_ = execConn.Close()
-		return fmt.Errorf("join exec io connection to local stream error: %w", err)
-	}
+	cmd.Stdin = serverConn
+	cmd.Stdout = serverConn
+	cmd.Stderr = serverConn
 
 	// 运行命令
 	return cmd.Run()
