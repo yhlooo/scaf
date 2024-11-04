@@ -45,7 +45,7 @@ func (s *BufferedStream) Start(_ context.Context) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	if s.active {
-		return fmt.Errorf("already started")
+		return ErrStreamAlreadyStarted
 	}
 	s.active = true
 	return nil
@@ -64,7 +64,7 @@ func (s *BufferedStream) Join(ctx context.Context, conn Connection) error {
 	defer s.lock.Unlock()
 
 	if !s.active {
-		return fmt.Errorf("inactive stream")
+		return ErrStreamAlreadyStopped
 	}
 
 	switch {
@@ -84,7 +84,7 @@ func (s *BufferedStream) Join(ctx context.Context, conn Connection) error {
 		go s.handleConn(ctx, &s.connB, &s.connA, s.connABuffCh)
 	default:
 		// 满员了，不能加入了
-		return fmt.Errorf("full stream")
+		return ErrStreamIsFull
 	}
 
 	select {
@@ -127,10 +127,11 @@ func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connect
 				// 读完了
 				return
 			}
-			logger.Error(err, "read from connection error")
+			logger.Error(err, "read from connection error", "conn", connR.Name())
 			time.Sleep(bufferedStreamRetryInterval)
 			continue
 		}
+		logger.V(2).Info(fmt.Sprintf("read from connection: %q", tmp[:n]), "conn", connR.Name())
 
 		s.lock.RLock()
 		connW := *connWP
@@ -147,8 +148,9 @@ func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connect
 
 		// 另一个连接已经加入
 		if _, err := connW.Write(tmp[:n]); err != nil {
-			logger.Error(err, "write to connection error")
+			logger.Error(err, "write to connection error", "conn", connW.Name())
 		}
+		logger.V(2).Info(fmt.Sprintf("write to connection: %q", tmp[:n]), "conn", connW.Name())
 	}
 }
 
@@ -163,8 +165,9 @@ func (s *BufferedStream) flushBuff(ctx context.Context, buffCh <-chan []byte, co
 				return
 			}
 			if _, err := conn.Write(content); err != nil {
-				logger.Error(err, "write to connection error")
+				logger.Error(err, "write to connection error", "conn", conn.Name())
 			}
+			logger.V(2).Info(fmt.Sprintf("write to connection: %q", content), "conn", conn.Name())
 		default:
 			return
 		}
@@ -177,12 +180,12 @@ func (s *BufferedStream) Stop(ctx context.Context) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	if !s.active {
-		return fmt.Errorf("already stopped")
+		return ErrStreamAlreadyStopped
 	}
 
 	if s.connA != nil {
 		if err := s.connA.Close(); err != nil {
-			logger.Error(err, "close connection A error")
+			logger.Error(err, "close connection error", "conn", s.connA.Name())
 		}
 		s.connA = nil
 	}
@@ -192,7 +195,7 @@ func (s *BufferedStream) Stop(ctx context.Context) error {
 	}
 	if s.connB != nil {
 		if err := s.connB.Close(); err != nil {
-			logger.Error(err, "close connection B error")
+			logger.Error(err, "close connection error", "conn", s.connB.Name())
 		}
 		s.connB = nil
 	}

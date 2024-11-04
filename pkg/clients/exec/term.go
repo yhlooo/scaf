@@ -44,7 +44,9 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 	logger := logr.FromContextOrDiscard(ctx)
 
 	// 与服务端建立连接
-	serverConn, err := t.Client.ConnectStream(ctx, streamName)
+	serverConn, err := t.Client.ConnectStream(ctx, streamName, common.ConnectStreamOptions{
+		ConnectionName: "terminal",
+	})
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
@@ -95,7 +97,10 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 
 	resizeCh := make(chan os.Signal, 1)
 	signal.Notify(resizeCh, syscall.SIGWINCH)
-	defer close(resizeCh)
+	defer func() {
+		signal.Stop(resizeCh)
+		close(resizeCh)
+	}()
 	for {
 		select {
 		case <-ctx.Done():

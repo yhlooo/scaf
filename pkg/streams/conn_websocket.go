@@ -9,12 +9,16 @@ import (
 )
 
 // NewWebSocketConnection 创建 WebSocketConnection
-func NewWebSocketConnection(conn *websocket.Conn) *WebSocketConnection {
-	return &WebSocketConnection{conn: conn}
+func NewWebSocketConnection(name string, conn *websocket.Conn) *WebSocketConnection {
+	return &WebSocketConnection{
+		name: name,
+		conn: conn,
+	}
 }
 
 // WebSocketConnection 是 Connection 的基于 WebSocket 的实现
 type WebSocketConnection struct {
+	name         string
 	conn         *websocket.Conn
 	readBuffLock sync.Mutex
 	readBuff     *bytes.Buffer
@@ -22,6 +26,11 @@ type WebSocketConnection struct {
 }
 
 var _ Connection = &WebSocketConnection{}
+
+// Name 返回连接名
+func (conn *WebSocketConnection) Name() string {
+	return conn.name
+}
 
 // Read 读数据
 func (conn *WebSocketConnection) Read(p []byte) (int, error) {

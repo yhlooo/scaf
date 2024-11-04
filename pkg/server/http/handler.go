@@ -20,6 +20,9 @@ import (
 
 const (
 	loggerName = "http"
+
+	// ConnectionNameHeader 连接名头
+	ConnectionNameHeader = "X-Scaf-Connection-Name"
 )
 
 // NewHTTPHandler 创建 HTTP 请求处理器
@@ -138,6 +141,7 @@ func (h *httpHandlers) HandleGetStream(w http.ResponseWriter, req *http.Request)
 
 	// 升级连接加入流
 	if strings.ToLower(req.Header.Get("Connection")) == "upgrade" {
+		connName := req.Header.Get(ConnectionNameHeader)
 		switch {
 		case websocket.IsWebSocketUpgrade(req):
 			upgrader := &websocket.Upgrader{
@@ -153,7 +157,7 @@ func (h *httpHandlers) HandleGetStream(w http.ResponseWriter, req *http.Request)
 				))
 				return
 			}
-			if err := ins.Stream.Join(ctx, streams.NewWebSocketConnection(conn)); err != nil {
+			if err := ins.Stream.Join(ctx, streams.NewWebSocketConnection(connName, conn)); err != nil {
 				logger.Error(err, "join stream error")
 				errMsg, _ := json.Marshal(apierrors.NewInternalServerError(fmt.Errorf("join stream error: %w", err)))
 				if err := conn.WriteMessage(websocket.TextMessage, errMsg); err != nil {

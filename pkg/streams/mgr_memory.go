@@ -2,6 +2,7 @@ package streams
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -88,7 +89,7 @@ func (mgr *InMemoryManager) DeleteStream(ctx context.Context, uid UID) error {
 	}
 
 	// 停止流
-	if err := stream.Stream.Stop(ctx); err != nil {
+	if err := stream.Stream.Stop(ctx); err != nil && !errors.Is(err, ErrStreamAlreadyStopped) {
 		return fmt.Errorf("stop stream error: %w", err)
 	}
 

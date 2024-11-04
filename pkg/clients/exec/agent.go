@@ -43,7 +43,9 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) e
 	logger := logr.FromContextOrDiscard(ctx)
 
 	// 与服务端建立连接
-	serverConn, err := agent.Client.ConnectStream(ctx, streamName)
+	serverConn, err := agent.Client.ConnectStream(ctx, streamName, common.ConnectStreamOptions{
+		ConnectionName: "agent",
+	})
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
@@ -57,7 +59,7 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) e
 		if err != nil {
 			return fmt.Errorf("start command error: %w", err)
 		}
-		ptyConn := streams.NewPTYConnection(ptmx)
+		ptyConn := streams.NewPTYConnection("agent", ptmx)
 		defer func() {
 			_ = ptyConn.Close()
 		}()

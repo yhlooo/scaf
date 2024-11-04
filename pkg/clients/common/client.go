@@ -14,6 +14,7 @@ import (
 
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
+	serverhttp "github.com/yhlooo/scaf/pkg/server/http"
 	"github.com/yhlooo/scaf/pkg/streams"
 )
 
@@ -118,14 +119,25 @@ func (c *Client) DeleteStream(ctx context.Context, name string) error {
 	return nil
 }
 
+// ConnectStreamOptions 连接到流选项
+type ConnectStreamOptions struct {
+	ConnectionName string
+}
+
 // ConnectStream 连接到流
-func (c *Client) ConnectStream(ctx context.Context, name string) (streams.Connection, error) {
+func (c *Client) ConnectStream(
+	ctx context.Context,
+	name string,
+	opts ConnectStreamOptions,
+) (streams.Connection, error) {
 	server := c.opts.Server
 	server = strings.Replace(server, "https://", "wss://", 1)
 	server = strings.Replace(server, "http://", "ws://", 1)
-	conn, resp, connErr := websocket.DefaultDialer.DialContext(ctx, server+"/v1/streams/"+name, nil)
+	conn, resp, connErr := websocket.DefaultDialer.DialContext(ctx, server+"/v1/streams/"+name, map[string][]string{
+		serverhttp.ConnectionNameHeader: {opts.ConnectionName},
+	})
 	if connErr == nil {
-		return streams.NewWebSocketConnection(conn), nil
+		return streams.NewWebSocketConnection(opts.ConnectionName, conn), nil
 	}
 	if resp == nil {
 		return nil, connErr

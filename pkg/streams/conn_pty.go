@@ -15,8 +15,9 @@ var (
 )
 
 // NewPTYConnection 创建 PTYConnection
-func NewPTYConnection(ptyIO *os.File) *PTYConnection {
+func NewPTYConnection(name string, ptyIO *os.File) *PTYConnection {
 	return &PTYConnection{
+		name: name,
 		File: ptyIO,
 	}
 }
@@ -24,10 +25,16 @@ func NewPTYConnection(ptyIO *os.File) *PTYConnection {
 // PTYConnection 是 Connection 的基于伪终端的实现
 type PTYConnection struct {
 	*os.File
+	name     string
 	resizeCh chan *pty.Winsize
 }
 
 var _ Connection = &PTYConnection{}
+
+// Name 返回连接名
+func (conn *PTYConnection) Name() string {
+	return conn.name
+}
 
 // Write 写到 pty 输入流
 func (conn *PTYConnection) Write(p []byte) (n int, err error) {
