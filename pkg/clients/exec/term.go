@@ -38,6 +38,14 @@ type Terminal struct {
 	tty bool
 }
 
+// WithToken 返回带指定 Token 的客户端
+func (t *Terminal) WithToken(token string) *Terminal {
+	return &Terminal{
+		Client: t.Client.WithToken(token),
+		tty:    t.tty,
+	}
+}
+
 // Run 与服务端建立连接并转发输入输出
 // 阻塞直到运行结束
 func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, output io.Writer) error {

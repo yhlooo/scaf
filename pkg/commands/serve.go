@@ -6,6 +6,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
+	"github.com/yhlooo/scaf/pkg/auth"
 	"github.com/yhlooo/scaf/pkg/commands/options"
 	"github.com/yhlooo/scaf/pkg/server"
 )
@@ -21,11 +22,20 @@ func NewServeCommandWithOptions(opts *options.ServeOptions) *cobra.Command {
 
 			s := server.NewServer(server.Options{
 				HTTPAddr: opts.HTTPAddr,
+				TokenAuthenticator: auth.TokenAuthenticatorOptions{
+					Issuer:  opts.JWTIssuer,
+					SignKey: opts.JWTKey,
+				},
 			})
 			if err := s.Start(ctx); err != nil {
 				return fmt.Errorf("start server error: %w", err)
 			}
 			logger.Info(fmt.Sprintf("scaf serve http on %q", s.HTTPAddr().String()))
+			if len(opts.JWTKey) == 0 {
+				// key 是随机生成的，需要生成个管理员 token ，否则没有地方能获取该 token
+				token, _ := s.AdminToken()
+				logger.Info(fmt.Sprintf("admin token: %s", token))
+			}
 
 			// 等待服务结束
 			<-s.Done()

@@ -26,6 +26,8 @@ const (
 type Options struct {
 	// 服务端 URL
 	Server string
+	// 用于认证的 Token
+	Token string
 }
 
 // Complete 将选项补充完整
@@ -68,6 +70,17 @@ type Client struct {
 	opts       Options
 	httpClient *http.Client
 	wsDialer   *websocket.Dialer
+}
+
+// WithToken 返回使用指定 Token 的客户端
+func (c *Client) WithToken(token string) *Client {
+	opts := c.opts
+	opts.Token = token
+	return &Client{
+		opts:       opts,
+		httpClient: c.httpClient,
+		wsDialer:   c.wsDialer,
+	}
 }
 
 // CreateStream 创建流
@@ -133,9 +146,13 @@ func (c *Client) ConnectStream(
 	server := c.opts.Server
 	server = strings.Replace(server, "https://", "wss://", 1)
 	server = strings.Replace(server, "http://", "ws://", 1)
-	conn, resp, connErr := websocket.DefaultDialer.DialContext(ctx, server+"/v1/streams/"+name, map[string][]string{
+	header := map[string][]string{
 		serverhttp.ConnectionNameHeader: {opts.ConnectionName},
-	})
+	}
+	if c.opts.Token != "" {
+		header["Authorization"] = []string{"Bearer " + c.opts.Token}
+	}
+	conn, resp, connErr := websocket.DefaultDialer.DialContext(ctx, server+"/v1/streams/"+name, header)
 	if connErr == nil {
 		return streams.NewWebSocketConnection(opts.ConnectionName, conn), nil
 	}
@@ -176,6 +193,9 @@ func (c *Client) request(ctx context.Context, method, uri string, body, resultIn
 	req, err := http.NewRequestWithContext(ctx, method, c.opts.Server+uri, bodyReader)
 	if err != nil {
 		return fmt.Errorf("make request error: %w", err)
+	}
+	if c.opts.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.opts.Token)
 	}
 
 	resp, err := c.httpClient.Do(req)

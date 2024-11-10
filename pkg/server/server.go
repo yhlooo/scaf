@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/yhlooo/scaf/pkg/auth"
 	serverhttp "github.com/yhlooo/scaf/pkg/server/http"
 )
 
@@ -21,6 +22,8 @@ const (
 type Options struct {
 	// HTTP 监听地址
 	HTTPAddr string
+	// Token 认证器选项
+	TokenAuthenticator auth.TokenAuthenticatorOptions
 }
 
 // Complete 将选项补充完整
@@ -33,7 +36,10 @@ func (opts *Options) Complete() {
 // NewServer 创建 *Server
 func NewServer(opts Options) *Server {
 	opts.Complete()
-	return &Server{opts: opts}
+	return &Server{
+		opts:          opts,
+		authenticator: auth.NewTokenAuthenticator(opts.TokenAuthenticator),
+	}
 }
 
 // Server scaf 服务
@@ -47,6 +53,8 @@ type Server struct {
 
 	httpListener net.Listener
 	httpHandler  http.Handler
+
+	authenticator *auth.TokenAuthenticator
 }
 
 // Start 启动服务
@@ -67,7 +75,9 @@ func (s *Server) Start(ctx context.Context) error {
 		if err != nil {
 			return
 		}
-		s.httpHandler = serverhttp.NewHTTPHandler(ctx)
+		s.httpHandler = serverhttp.NewHTTPHandler(ctx, serverhttp.Options{
+			TokenAuthenticator: s.authenticator,
+		})
 
 		go s.run(ctx)
 	})
@@ -120,6 +130,11 @@ func (s *Server) HTTPAddr() net.Addr {
 		return nil
 	}
 	return s.httpListener.Addr()
+}
+
+// AdminToken 获取管理员用户 Token
+func (s *Server) AdminToken() (string, error) {
+	return s.authenticator.IssueToken(auth.AdminUsername, 0)
 }
 
 // run 运行服务，阻塞直到 ctx 被取消

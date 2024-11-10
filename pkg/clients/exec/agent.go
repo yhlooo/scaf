@@ -37,6 +37,14 @@ type Agent struct {
 	tty bool
 }
 
+// WithToken 返回带指定 Token 的客户端
+func (agent *Agent) WithToken(token string) *Agent {
+	return &Agent{
+		Client: agent.Client.WithToken(token),
+		tty:    agent.tty,
+	}
+}
+
 // Run 与服务端建立连接并运行命令
 // 阻塞直到运行结束
 func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) error {

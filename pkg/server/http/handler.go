@@ -15,6 +15,7 @@ import (
 	"github.com/yhlooo/scaf/pkg/apierrors"
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
+	"github.com/yhlooo/scaf/pkg/auth"
 	"github.com/yhlooo/scaf/pkg/streams"
 )
 
@@ -25,13 +26,19 @@ const (
 	ConnectionNameHeader = "X-Scaf-Connection-Name"
 )
 
+// Options 选项
+type Options struct {
+	TokenAuthenticator *auth.TokenAuthenticator
+}
+
 // NewHTTPHandler 创建 HTTP 请求处理器
-func NewHTTPHandler(ctx context.Context) http.Handler {
+func NewHTTPHandler(ctx context.Context, opts Options) http.Handler {
 	logger := logr.FromContextOrDiscard(ctx).WithName(loggerName)
 
 	handlers := &httpHandlers{
-		logger:    logger,
-		streamMgr: streams.NewInMemoryManager(),
+		logger:        logger,
+		streamMgr:     streams.NewInMemoryManager(),
+		authenticator: opts.TokenAuthenticator,
 	}
 
 	mux := http.NewServeMux()
@@ -44,8 +51,9 @@ func NewHTTPHandler(ctx context.Context) http.Handler {
 
 // httpHandlers HTTP 请求处理器
 type httpHandlers struct {
-	logger    logr.Logger
-	streamMgr streams.Manager
+	logger        logr.Logger
+	streamMgr     streams.Manager
+	authenticator *auth.TokenAuthenticator
 }
 
 // HandleCreateStream 处理创建流
@@ -84,7 +92,15 @@ func (h *httpHandlers) HandleCreateStream(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	responseJSON(ctx, w, http.StatusCreated, newStreamAPIObject(ins))
+	obj := newStreamAPIObject(ins)
+	obj.Status.Token, err = h.authenticator.IssueToken(auth.StreamUsername(obj.Name), 0)
+	if err != nil {
+		logger.Error(err, "issue stream token error")
+		responseStatus(ctx, w, apierrors.NewInternalServerError(fmt.Errorf("issue stream token error: %w", err)))
+		return
+	}
+
+	responseJSON(ctx, w, http.StatusCreated, obj)
 }
 
 // HandleListStreams 处理列出流
@@ -95,6 +111,18 @@ func (h *httpHandlers) HandleListStreams(w http.ResponseWriter, req *http.Reques
 	ctx := logr.NewContext(req.Context(), logger)
 	req = req.WithContext(ctx)
 	logger.Info("request received")
+
+	username, err := h.getUsername(req)
+	if err != nil {
+		responseStatus(ctx, w, apierrors.NewUnauthorizedError(err))
+		return
+	}
+	if !auth.IsAdmin(username) {
+		responseStatus(ctx, w, apierrors.NewForbiddenError(fmt.Errorf(
+			"user %q is not allowed to list streams",
+			username,
+		)))
+	}
 
 	streamList, err := h.streamMgr.ListStreams(ctx)
 	if err != nil {
@@ -126,6 +154,18 @@ func (h *httpHandlers) HandleGetStream(w http.ResponseWriter, req *http.Request)
 	ctx := logr.NewContext(req.Context(), logger)
 	req = req.WithContext(ctx)
 	logger.Info("request received")
+
+	username, err := h.getUsername(req)
+	if err != nil {
+		responseStatus(ctx, w, apierrors.NewUnauthorizedError(err))
+		return
+	}
+	if !auth.IsAdmin(username) && !auth.IsStream(username, streamName) {
+		responseStatus(ctx, w, apierrors.NewForbiddenError(fmt.Errorf(
+			"user %q is not allowed to get stream %q",
+			username, streamName,
+		)))
+	}
 
 	ins, err := h.streamMgr.GetStream(ctx, streams.UID(streamName))
 	if err != nil {
@@ -191,6 +231,18 @@ func (h *httpHandlers) HandleDeleteStream(w http.ResponseWriter, req *http.Reque
 	req = req.WithContext(ctx)
 	logger.Info("request received")
 
+	username, err := h.getUsername(req)
+	if err != nil {
+		responseStatus(ctx, w, apierrors.NewUnauthorizedError(err))
+		return
+	}
+	if !auth.IsAdmin(username) && !auth.IsStream(username, streamName) {
+		responseStatus(ctx, w, apierrors.NewForbiddenError(fmt.Errorf(
+			"user %q is not allowed to delete stream %q",
+			username, streamName,
+		)))
+	}
+
 	if err := h.streamMgr.DeleteStream(ctx, streams.UID(streamName)); err != nil {
 		logger.Error(err, "delete stream error")
 		switch {
@@ -202,6 +254,20 @@ func (h *httpHandlers) HandleDeleteStream(w http.ResponseWriter, req *http.Reque
 		return
 	}
 	responseStatus(ctx, w, newOKStatus())
+}
+
+// getUsername 从获取认证的用户名
+func (h *httpHandlers) getUsername(req *http.Request) (string, error) {
+	token := req.Header.Get("Authorization")
+	if token == "" {
+		return "", fmt.Errorf("missing token")
+	}
+	if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		return "", fmt.Errorf("invalid token: %q", token)
+	}
+	token = token[7:]
+
+	return h.authenticator.AuthenticateToken(token)
 }
 
 // newOKStatus 创建普通正常状态

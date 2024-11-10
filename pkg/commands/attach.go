@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -28,6 +29,7 @@ func NewAttachCommandWithOptions(opts *options.AttachOptions) *cobra.Command {
 			client, err := clientsexec.NewTerminal(clientsexec.TerminalOptions{
 				Client: clientscommon.Options{
 					Server: opts.Server,
+					Token:  opts.Token,
 				},
 				TTY: opts.TTY,
 			})
@@ -47,12 +49,23 @@ func NewAttachCommandWithOptions(opts *options.AttachOptions) *cobra.Command {
 					return fmt.Errorf("create stream error: %w", err)
 				}
 				streamName = stream.Name
-				fmt.Printf("Stream: %s\n", streamName)
 				defer func() {
 					if err := client.DeleteStream(ctx, streamName); err != nil {
 						logger.Error(err, "delete stream error")
 					}
 				}()
+				fmt.Printf("Stream: %s\n", streamName)
+				execCmd := []string{"scaf", "exec", "--stream", streamName}
+				if stream.Status.Token != "" {
+					fmt.Printf("Token: %s\n", stream.Status.Token)
+					execCmd = append(execCmd, "--token", stream.Status.Token)
+					client = client.WithToken(stream.Status.Token)
+				}
+				if opts.TTY {
+					execCmd = append(execCmd, "-t")
+				}
+				execCmd = append(execCmd, "--", "COMMAND", "ARG...")
+				fmt.Printf("Start exec command: %s", strings.Join(execCmd, " "))
 			}
 
 			return client.Run(ctx, streamName, os.Stdin, os.Stdout)
