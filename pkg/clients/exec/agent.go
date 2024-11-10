@@ -63,18 +63,19 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd) e
 		defer func() {
 			_ = ptyConn.Close()
 		}()
+		ptyConn.InjectLogger(logger)
 
 		// 下行
 		go func() {
-			if _, err := io.Copy(serverConn, ptyConn); err != nil {
-				logger.Error(err, "read from server error")
+			if _, err := io.Copy(ptyConn, serverConn); err != nil {
+				logger.Error(err, "copy from server to agent error")
 			}
 			_ = cmd.Process.Kill()
 		}()
 		// 上行
 		go func() {
-			if _, err := io.Copy(ptyConn, serverConn); err != nil {
-				logger.Error(err, "write to server error")
+			if _, err := io.Copy(serverConn, ptyConn); err != nil {
+				logger.Error(err, "copy from agent to server error")
 			}
 			_ = cmd.Process.Kill()
 		}()

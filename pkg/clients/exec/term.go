@@ -55,12 +55,13 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 	}()
 
 	// 设置输入流
-	var stdinFd int
+	var stdinFd *int
 	if t.tty {
 		if f, ok := input.(*os.File); ok {
 			// 将输入流设置为 raw 格式
-			stdinFd = int(f.Fd())
-			oldState, err := term.MakeRaw(stdinFd)
+			stdinFd = new(int)
+			*stdinFd = int(f.Fd())
+			oldState, err := term.MakeRaw(*stdinFd)
 			if err != nil {
 				return fmt.Errorf("make input to raw error: %w", err)
 			}
@@ -69,7 +70,7 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 				_ = term.Restore(int(f.Fd()), oldState)
 			}()
 			// 设置窗口大小
-			w, h, err := term.GetSize(stdinFd)
+			w, h, err := term.GetSize(*stdinFd)
 			if err != nil {
 				logger.Error(err, "get terminal size error")
 			} else {
@@ -82,16 +83,16 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 	downDone := make(chan struct{})
 	go func() {
 		defer close(downDone)
-		if _, err := io.Copy(serverConn, input); err != nil {
-			logger.Error(err, "read from server error")
+		if _, err := io.Copy(output, serverConn); err != nil {
+			logger.Error(err, "copy from server to terminal error")
 		}
 	}()
 	// 上行
 	upDone := make(chan struct{})
 	go func() {
 		defer close(upDone)
-		if _, err := io.Copy(output, serverConn); err != nil {
-			logger.Error(err, "write to server error")
+		if _, err := io.Copy(serverConn, input); err != nil {
+			logger.Error(err, "copy from terminal to server error")
 		}
 	}()
 
@@ -110,14 +111,16 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 		case <-downDone:
 			return nil
 		case <-resizeCh:
-			if stdinFd != 0 {
-				w, h, err := term.GetSize(stdinFd)
-				if err != nil {
-					logger.Error(err, "get terminal size error")
-					continue
-				}
-				_ = sendResizeANSI(serverConn, h, w)
+			if stdinFd == nil {
+				continue
 			}
+			w, h, err := term.GetSize(*stdinFd)
+			if err != nil {
+				logger.Error(err, "get terminal size error")
+				continue
+			}
+			_ = sendResizeANSI(serverConn, h, w)
+
 		}
 	}
 }

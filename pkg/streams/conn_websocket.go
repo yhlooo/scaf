@@ -65,6 +65,10 @@ func (conn *WebSocketConnection) Write(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 
+	if len(p) == 0 {
+		return 0, nil
+	}
+
 	if err := conn.conn.WriteMessage(websocket.BinaryMessage, p); err != nil {
 		_ = conn.Close()
 		return 0, err
