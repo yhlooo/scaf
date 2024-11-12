@@ -174,6 +174,14 @@ func (t *Terminal) handleConn(
 			if _, err := stderr.Write(m); err != nil {
 				logger.Error(err, "write to stderr error")
 			}
+		case ExitCode:
+			if m == 0 {
+				return
+			}
+			if _, err := stderr.Write([]byte(fmt.Sprintf("command exit with code: %d\n", m))); err != nil {
+				logger.Error(err, "write to stderr error")
+			}
+			return
 		default:
 			logger.Info(fmt.Sprintf("unsupported message type: %s, msg: %v", m.Type(), m))
 		}
