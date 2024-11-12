@@ -1,9 +1,7 @@
 package streams
 
 import (
-	"bytes"
-	"io"
-	"sync"
+	"fmt"
 
 	"github.com/gorilla/websocket"
 )
@@ -18,11 +16,9 @@ func NewWebSocketConnection(name string, conn *websocket.Conn) *WebSocketConnect
 
 // WebSocketConnection 是 Connection 的基于 WebSocket 的实现
 type WebSocketConnection struct {
-	name         string
-	conn         *websocket.Conn
-	readBuffLock sync.Mutex
-	readBuff     *bytes.Buffer
-	closed       bool
+	name     string
+	conn     *websocket.Conn
+	closeErr error
 }
 
 var _ Connection = &WebSocketConnection{}
@@ -32,52 +28,44 @@ func (conn *WebSocketConnection) Name() string {
 	return conn.name
 }
 
-// Read 读数据
-func (conn *WebSocketConnection) Read(p []byte) (int, error) {
-	conn.readBuffLock.Lock()
-	defer conn.readBuffLock.Unlock()
-
-	if conn.closed {
-		return 0, io.EOF
+// Send 发送
+func (conn *WebSocketConnection) Send(data []byte) error {
+	if conn.closeErr != nil {
+		return conn.closeErr
 	}
 
-	if conn.readBuff == nil {
-		conn.readBuff = new(bytes.Buffer)
-	}
-
-	if conn.readBuff.Len() == 0 {
-		// 缓冲区没有了再读一点
-		var err error
-		_, tmp, err := conn.conn.ReadMessage()
-		if err != nil {
-			_ = conn.Close()
-			return 0, err
+	err := conn.conn.WriteMessage(websocket.BinaryMessage, data)
+	if err != nil {
+		if websocket.IsUnexpectedCloseError(err) {
+			conn.closeErr = fmt.Errorf("%w: %s", ErrConnectionClosed, err.Error())
+			return conn.closeErr
 		}
-		conn.readBuff.Write(tmp)
+		return err
 	}
 
-	return conn.readBuff.Read(p)
+	return nil
 }
 
-// Write 写数据
-func (conn *WebSocketConnection) Write(p []byte) (int, error) {
-	if conn.closed {
-		return 0, io.EOF
+// Receive 接收
+func (conn *WebSocketConnection) Receive() ([]byte, error) {
+	if conn.closeErr != nil {
+		return nil, conn.closeErr
 	}
 
-	if len(p) == 0 {
-		return 0, nil
+	_, msg, err := conn.conn.ReadMessage()
+	if err != nil {
+		if websocket.IsUnexpectedCloseError(err) {
+			conn.closeErr = fmt.Errorf("%w: %s", ErrConnectionClosed, err.Error())
+			return nil, conn.closeErr
+		}
+		return nil, err
 	}
 
-	if err := conn.conn.WriteMessage(websocket.BinaryMessage, p); err != nil {
-		_ = conn.Close()
-		return 0, err
-	}
-	return len(p), nil
+	return msg, nil
 }
 
 // Close 关闭连接
 func (conn *WebSocketConnection) Close() error {
-	conn.closed = true
+	conn.closeErr = ErrConnectionClosed
 	return conn.conn.Close()
 }

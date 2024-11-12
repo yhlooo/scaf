@@ -3,8 +3,8 @@ package streams
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -13,8 +13,7 @@ import (
 
 const (
 	bufferedStreamLoggerName       = "buffered-stream"
-	bufferedStreamBufferChannelLen = 256     // 最大 256 * 4Ki = 1MBi
-	bufferedStreamReadSize         = 4 << 10 // 4Ki
+	bufferedStreamBufferChannelLen = 256
 	bufferedStreamRetryInterval    = time.Second
 )
 
@@ -119,19 +118,18 @@ func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connect
 		s.lock.Unlock()
 	}()
 
-	tmp := make([]byte, bufferedStreamReadSize)
 	for {
-		n, err := connR.Read(tmp)
+		data, err := connR.Receive()
 		if err != nil {
-			if err == io.EOF {
-				// 读完了
+			if errors.Is(err, ErrConnectionClosed) {
+				// 连接已关闭
 				return
 			}
-			logger.Error(err, "read from connection error", "conn", connR.Name())
+			logger.Error(err, "receive from connection error", "conn", connR.Name())
 			time.Sleep(bufferedStreamRetryInterval)
 			continue
 		}
-		logger.V(2).Info(fmt.Sprintf("read from connection: %q", tmp[:n]), "conn", connR.Name())
+		logger.V(2).Info(fmt.Sprintf("received from connection: %q", data), "conn", connR.Name())
 
 		s.lock.RLock()
 		connW := *connWP
@@ -140,17 +138,17 @@ func (s *BufferedStream) handleConn(ctx context.Context, connRP, connWP *Connect
 		if connW == nil {
 			// 另一个连接还未加入，先写到缓冲区
 			select {
-			case writeBuffCh <- bytes.Clone(tmp[:n]):
+			case writeBuffCh <- bytes.Clone(data):
 			default:
 			}
 			continue
 		}
 
 		// 另一个连接已经加入
-		if _, err := connW.Write(tmp[:n]); err != nil {
-			logger.Error(err, "write to connection error", "conn", connW.Name())
+		if err := connW.Send(data); err != nil {
+			logger.Error(err, "send to connection error", "conn", connW.Name())
 		}
-		logger.V(2).Info(fmt.Sprintf("write to connection: %q", tmp[:n]), "conn", connW.Name())
+		logger.V(2).Info(fmt.Sprintf("send to connection: %q", data), "conn", connW.Name())
 	}
 }
 
@@ -164,10 +162,10 @@ func (s *BufferedStream) flushBuff(ctx context.Context, buffCh <-chan []byte, co
 			if !ok {
 				return
 			}
-			if _, err := conn.Write(content); err != nil {
-				logger.Error(err, "write to connection error", "conn", conn.Name())
+			if err := conn.Send(content); err != nil {
+				logger.Error(err, "send to connection error", "conn", conn.Name())
 			}
-			logger.V(2).Info(fmt.Sprintf("write to connection: %q", content), "conn", conn.Name())
+			logger.V(2).Info(fmt.Sprintf("send to connection: %q", content), "conn", conn.Name())
 		default:
 			return
 		}

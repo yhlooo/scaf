@@ -11,4 +11,6 @@ var (
 	ErrStreamIsFull = errors.New("StreamIsFull")
 	// ErrStreamAlreadyStopped 流已经停止了
 	ErrStreamAlreadyStopped = errors.New("StreamAlreadyStopped")
+	// ErrConnectionClosed 连接已关闭
+	ErrConnectionClosed = errors.New("ConnectionClosed")
 )

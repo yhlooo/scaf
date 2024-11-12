@@ -2,6 +2,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,60 +13,58 @@ import (
 	"golang.org/x/term"
 
 	"github.com/yhlooo/scaf/pkg/clients/common"
+	"github.com/yhlooo/scaf/pkg/streams"
 )
 
-// TerminalOptions Terminal 运行选项
-type TerminalOptions struct {
-	Client common.Options
-	TTY    bool
-}
+const (
+	maxReadInputSize = 16 << 10 // 16KiB
+)
 
 // NewTerminal 创建 Terminal
-func NewTerminal(opts TerminalOptions) (*Terminal, error) {
-	client, err := common.New(opts.Client)
-	if err != nil {
-		return nil, err
-	}
-	return &Terminal{
-		Client: client,
-		tty:    opts.TTY,
-	}, nil
+func NewTerminal(client *common.Client) *Terminal {
+	return &Terminal{c: client}
 }
 
 // Terminal exec 终端
 type Terminal struct {
-	*common.Client
-	tty bool
+	c *common.Client
 }
 
-// WithToken 返回带指定 Token 的客户端
-func (t *Terminal) WithToken(token string) *Terminal {
+// Client 返回 Terminal 使用的客户端
+func (t *Terminal) Client() *common.Client {
+	return t.c
+}
+
+// WithClient 返回使用指定客户端的 Terminal
+func (t *Terminal) WithClient(client *common.Client) *Terminal {
 	return &Terminal{
-		Client: t.Client.WithToken(token),
-		tty:    t.tty,
+		c: client,
 	}
 }
 
 // Run 与服务端建立连接并转发输入输出
 // 阻塞直到运行结束
-func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, output io.Writer) error {
+func (t *Terminal) Run(ctx context.Context, streamName string, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	logger := logr.FromContextOrDiscard(ctx)
 
 	// 与服务端建立连接
-	serverConn, err := t.Client.ConnectStream(ctx, streamName, common.ConnectStreamOptions{
+	conn, err := t.c.ConnectStream(ctx, streamName, common.ConnectStreamOptions{
 		ConnectionName: "terminal",
 	})
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
 	defer func() {
-		_ = serverConn.Close()
+		_ = conn.Close()
 	}()
 
 	// 设置输入流
 	var stdinFd *int
-	if t.tty {
-		if f, ok := input.(*os.File); ok {
+	if tty {
+		if f, ok := stdin.(*os.File); ok {
 			// 将输入流设置为 raw 格式
 			stdinFd = new(int)
 			*stdinFd = int(f.Fd())
@@ -82,27 +81,18 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 			if err != nil {
 				logger.Error(err, "get terminal size error")
 			} else {
-				_ = sendResizeANSI(serverConn, h, w)
+				if err := conn.Send(Resize{Height: uint16(h), Width: uint16(w)}.Raw()); err != nil {
+					logger.Error(err, "send resize message error")
+				}
 			}
 		}
 	}
 
-	// 下行
-	downDone := make(chan struct{})
-	go func() {
-		defer close(downDone)
-		if _, err := io.Copy(output, serverConn); err != nil {
-			logger.Error(err, "copy from server to terminal error")
-		}
-	}()
-	// 上行
-	upDone := make(chan struct{})
-	go func() {
-		defer close(upDone)
-		if _, err := io.Copy(serverConn, input); err != nil {
-			logger.Error(err, "copy from terminal to server error")
-		}
-	}()
+	// 转发输入输出
+	handleConnDone := make(chan struct{})
+	go t.handleConn(ctx, handleConnDone, conn, stdout, stderr)
+	handleInputDone := make(chan struct{})
+	go t.handleInput(ctx, handleInputDone, conn, stdin)
 
 	resizeCh := make(chan os.Signal, 1)
 	signal.Notify(resizeCh, syscall.SIGWINCH)
@@ -114,9 +104,11 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-upDone:
+		case <-handleConnDone:
+			cancel()
 			return nil
-		case <-downDone:
+		case <-handleInputDone:
+			cancel()
 			return nil
 		case <-resizeCh:
 			if stdinFd == nil {
@@ -127,15 +119,103 @@ func (t *Terminal) Run(ctx context.Context, streamName string, input io.Reader, 
 				logger.Error(err, "get terminal size error")
 				continue
 			}
-			_ = sendResizeANSI(serverConn, h, w)
-
+			if err := conn.Send(Resize{Height: uint16(h), Width: uint16(w)}.Raw()); err != nil {
+				logger.Error(err, "send resize message error")
+			}
 		}
 	}
 }
 
-// sendResizeANSI 发送修改窗口大小的 ANSI 序列
-// 自定义序列 PM<height>;<width>s
-func sendResizeANSI(w io.Writer, height, width int) error {
-	_, err := w.Write([]byte(fmt.Sprintf("\x1b^%d;%ds", height, width)))
-	return err
+// handleConn 处理连接
+func (t *Terminal) handleConn(
+	ctx context.Context,
+	done chan<- struct{},
+	conn streams.Connection,
+	stdout, stderr io.Writer,
+) {
+	defer close(done)
+	logger := logr.FromContextOrDiscard(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		data, err := conn.Receive()
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			logger.Error(err, "receive from server error")
+			if errors.Is(err, streams.ErrConnectionClosed) {
+				return
+			}
+			continue
+		}
+
+		// 解析消息
+		msg, err := ParseMessage(data)
+		if err != nil {
+			logger.Error(err, "parse message error")
+			continue
+		}
+
+		// 分类处理
+		switch m := msg.(type) {
+		case StdoutData:
+			if _, err := stdout.Write(m); err != nil {
+				logger.Error(err, "write to stdout error")
+			}
+		case StderrData:
+			if _, err := stderr.Write(m); err != nil {
+				logger.Error(err, "write to stderr error")
+			}
+		default:
+			logger.Info(fmt.Sprintf("unsupported message type: %s, msg: %v", m.Type(), m))
+		}
+	}
+}
+
+// handleInput 处理输入
+func (t *Terminal) handleInput(
+	ctx context.Context,
+	done chan<- struct{},
+	conn streams.Connection,
+	inputReader io.Reader,
+) {
+	defer close(done)
+	logger := logr.FromContextOrDiscard(ctx)
+
+	tmp := make([]byte, maxReadInputSize)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		n, err := inputReader.Read(tmp)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+
+			logger.Error(err, "read input error")
+			if err == io.EOF {
+				return
+			}
+			continue
+		}
+
+		// 编码消息发送到服务端
+		if err := conn.Send(StdinData(tmp[:n]).Raw()); err != nil {
+			logger.Error(err, "send message to server error")
+		}
+	}
 }

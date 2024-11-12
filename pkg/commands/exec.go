@@ -28,21 +28,19 @@ func NewExecCommandWithOptions(opts *options.ExecOptions) *cobra.Command {
 			logger := logr.FromContextOrDiscard(ctx)
 
 			// 创建客户端
-			client, err := clientsexec.NewAgent(clientsexec.AgentOptions{
-				Client: clientscommon.Options{
-					Server: opts.Server,
-					Token:  opts.Token,
-				},
-				TTY: opts.TTY,
+			client, err := clientscommon.New(clientscommon.Options{
+				Server: opts.Server,
+				Token:  opts.Token,
 			})
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
 			}
+			agent := clientsexec.NewAgent(client)
 
 			// 创建流
 			streamName := opts.Stream
 			if streamName == "" {
-				stream, err := client.Client.CreateStream(ctx, &streamv1.Stream{})
+				stream, err := client.CreateStream(ctx, &streamv1.Stream{})
 				if err != nil {
 					return fmt.Errorf("create stream error: %w", err)
 				}
@@ -58,6 +56,7 @@ func NewExecCommandWithOptions(opts *options.ExecOptions) *cobra.Command {
 					fmt.Printf("Token: %s\n", stream.Status.Token)
 					attachCmd = append(attachCmd, "--token", stream.Status.Token)
 					client = client.WithToken(stream.Status.Token)
+					agent = agent.WithClient(client)
 				}
 				if opts.TTY {
 					attachCmd = append(attachCmd, "-t")
@@ -65,7 +64,7 @@ func NewExecCommandWithOptions(opts *options.ExecOptions) *cobra.Command {
 				fmt.Printf("Start exec command: %s", strings.Join(attachCmd, " "))
 			}
 
-			return client.Run(ctx, streamName, exec.CommandContext(ctx, args[0], args[1:]...))
+			return agent.Run(ctx, streamName, exec.CommandContext(ctx, args[0], args[1:]...), opts.TTY)
 		},
 	}
 
