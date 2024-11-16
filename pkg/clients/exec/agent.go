@@ -20,22 +20,22 @@ const (
 )
 
 // NewAgent 创建 Agent
-func NewAgent(client *common.Client) *Agent {
+func NewAgent(client common.Client) *Agent {
 	return &Agent{c: client}
 }
 
 // Agent exec 代理
 type Agent struct {
-	c *common.Client
+	c common.Client
 }
 
 // Client 返回 Agent 使用的客户端
-func (agent *Agent) Client() *common.Client {
+func (agent *Agent) Client() common.Client {
 	return agent.c
 }
 
 // WithClient 返回使用指定客户端的 Agent
-func (agent *Agent) WithClient(client *common.Client) *Agent {
+func (agent *Agent) WithClient(client common.Client) *Agent {
 	return &Agent{
 		c: client,
 	}

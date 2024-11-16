@@ -5,7 +5,9 @@ import "github.com/spf13/pflag"
 // NewDefaultConnectOptions 创建默认 ConnectOptions
 func NewDefaultConnectOptions() ConnectOptions {
 	return ConnectOptions{
-		Server: "http://localhost",
+		Server: "",
+		GRPC:   false,
+		HTTP:   false,
 		Stream: "",
 		Token:  "",
 	}
@@ -15,6 +17,10 @@ func NewDefaultConnectOptions() ConnectOptions {
 type ConnectOptions struct {
 	// 服务端地址
 	Server string `json:"server,omitempty" yaml:"server,omitempty"`
+	// 使用 gRPC 连接服务端
+	GRPC bool `json:"grpc,omitempty" yaml:"grpc,omitempty"`
+	// 使用 HTTP 连接服务端
+	HTTP bool `json:"http,omitempty" yaml:"http,omitempty"`
 	// 连接的流名
 	Stream string `json:"stream,omitempty" yaml:"stream,omitempty"`
 	// 用于认证的 Token
@@ -24,6 +30,8 @@ type ConnectOptions struct {
 // AddPFlags 绑定选项到命令行
 func (opts *ConnectOptions) AddPFlags(fs *pflag.FlagSet) {
 	fs.StringVarP(&opts.Server, "server", "s", opts.Server, "Server address")
+	fs.BoolVar(&opts.GRPC, "grpc", opts.GRPC, "Connect server in gRPC mode")
+	fs.BoolVar(&opts.HTTP, "http", opts.HTTP, "Connect server in HTTP mode")
 	fs.StringVar(&opts.Stream, "stream", opts.Stream, "Stream name connect to")
 	fs.StringVar(&opts.Token, "token", opts.Token, "Token")
 }

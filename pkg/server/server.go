@@ -8,20 +8,27 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/grpc"
 
+	streamv1grpc "github.com/yhlooo/scaf/pkg/apis/stream/v1/grpc"
 	"github.com/yhlooo/scaf/pkg/auth"
+	servergrpc "github.com/yhlooo/scaf/pkg/server/grpc"
 	serverhttp "github.com/yhlooo/scaf/pkg/server/http"
+	"github.com/yhlooo/scaf/pkg/streams"
 )
 
 const (
 	loggerName      = "server"
 	defaultHTTPAddr = ":80"
+	defaultGRPCAddr = ":9443"
 )
 
 // Options 是 Server 运行选项
 type Options struct {
 	// HTTP 监听地址
 	HTTPAddr string
+	// gRPC 监听地址
+	GRPCAddr string
 	// Token 认证器选项
 	TokenAuthenticator auth.TokenAuthenticatorOptions
 }
@@ -31,6 +38,9 @@ func (opts *Options) Complete() {
 	if opts.HTTPAddr == "" {
 		opts.HTTPAddr = defaultHTTPAddr
 	}
+	if opts.GRPCAddr == "" {
+		opts.GRPCAddr = defaultGRPCAddr
+	}
 }
 
 // NewServer 创建 *Server
@@ -39,6 +49,7 @@ func NewServer(opts Options) *Server {
 	return &Server{
 		opts:          opts,
 		authenticator: auth.NewTokenAuthenticator(opts.TokenAuthenticator),
+		streamMgr:     streams.NewInMemoryManager(),
 	}
 }
 
@@ -54,7 +65,12 @@ type Server struct {
 	httpListener net.Listener
 	httpHandler  http.Handler
 
+	grpcListener      net.Listener
+	grpcServer        *grpc.Server
+	grpcStreamsServer *servergrpc.StreamsServer
+
 	authenticator *auth.TokenAuthenticator
+	streamMgr     streams.Manager
 }
 
 // Start 启动服务
@@ -77,7 +93,19 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		s.httpHandler = serverhttp.NewHTTPHandler(ctx, serverhttp.Options{
 			TokenAuthenticator: s.authenticator,
+			StreamManager:      s.streamMgr,
 		})
+
+		s.grpcListener, err = net.Listen("tcp", s.opts.GRPCAddr)
+		if err != nil {
+			return
+		}
+		s.grpcServer = grpc.NewServer()
+		s.grpcStreamsServer = servergrpc.NewStreamsServer(ctx, servergrpc.Options{
+			TokenAuthenticator: s.authenticator,
+			StreamManager:      s.streamMgr,
+		})
+		streamv1grpc.RegisterStreamsServer(s.grpcServer, s.grpcStreamsServer)
 
 		go s.run(ctx)
 	})
@@ -145,6 +173,10 @@ func (s *Server) run(ctx context.Context) {
 		if err := s.httpListener.Close(); err != nil {
 			logger.Error(err, "close http listener error")
 		}
+		s.grpcServer.GracefulStop()
+		if err := s.grpcListener.Close(); err != nil {
+			logger.Error(err, "close grpc listener error")
+		}
 		close(s.done)
 	}()
 
@@ -162,8 +194,23 @@ func (s *Server) run(ctx context.Context) {
 		}
 	}()
 
+	grpcDone := make(chan struct{})
+	go func() {
+		defer close(grpcDone)
+		if err := s.grpcServer.Serve(s.grpcListener); err != nil {
+			select {
+			case <-ctx.Done():
+				// ctx 结束了错误就没所谓了
+				return
+			default:
+			}
+			logger.Error(err, "grpc serve error")
+		}
+	}()
+
 	select {
 	case <-ctx.Done():
 	case <-httpDone:
+	case <-grpcDone:
 	}
 }

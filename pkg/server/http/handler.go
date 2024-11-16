@@ -29,6 +29,7 @@ const (
 // Options 选项
 type Options struct {
 	TokenAuthenticator *auth.TokenAuthenticator
+	StreamManager      streams.Manager
 }
 
 // NewHTTPHandler 创建 HTTP 请求处理器
@@ -37,7 +38,7 @@ func NewHTTPHandler(ctx context.Context, opts Options) http.Handler {
 
 	handlers := &httpHandlers{
 		logger:        logger,
-		streamMgr:     streams.NewInMemoryManager(),
+		streamMgr:     opts.StreamManager,
 		authenticator: opts.TokenAuthenticator,
 	}
 
@@ -131,12 +132,7 @@ func (h *httpHandlers) HandleListStreams(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	ret := &streamv1.StreamList{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: streamv1.APIVersion,
-			Kind:       streamv1.StreamListKind,
-		},
-	}
+	ret := &streamv1.StreamList{}
 	for _, ins := range streamList {
 		ret.Items = append(ret.Items, *newStreamAPIObject(ins))
 	}
@@ -304,19 +300,12 @@ func responseStatus(ctx context.Context, w http.ResponseWriter, status *metav1.S
 // newStreamAPIObject 基于流实例创建流 API 对象
 func newStreamAPIObject(ins *streams.StreamInstance) *streamv1.Stream {
 	return &streamv1.Stream{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: streamv1.APIVersion,
-			Kind:       streamv1.StreamKind,
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: string(ins.UID), // TODO: 流名暂不支持自定义
 			UID:  string(ins.UID),
 		},
 		Spec: streamv1.StreamSpec{
 			StopPolicy: streamv1.StreamStopPolicy(ins.StopPolicy),
-		},
-		Status: streamv1.StreamStatus{
-			Token: "", // TODO: ...
 		},
 	}
 }

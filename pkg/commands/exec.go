@@ -28,10 +28,26 @@ func NewExecCommandWithOptions(opts *options.ExecOptions) *cobra.Command {
 			logger := logr.FromContextOrDiscard(ctx)
 
 			// 创建客户端
-			client, err := clientscommon.New(clientscommon.Options{
-				Server: opts.Server,
-				Token:  opts.Token,
-			})
+			var client clientscommon.Client
+			var err error
+			switch {
+			case opts.HTTP:
+				client, err = clientscommon.NewHTTPClient(clientscommon.HTTPClientOptions{
+					ServerURL: opts.Server,
+					Token:     opts.Token,
+				})
+			case opts.GRPC:
+				client, err = clientscommon.NewGRPCClient(clientscommon.GRPCClientOptions{
+					ServerAddress: opts.Server,
+					Token:         opts.Token,
+				})
+			default:
+				// TODO: 应该自动判断服务端支持什么模式，这里暂时使用 gRPC
+				client, err = clientscommon.NewGRPCClient(clientscommon.GRPCClientOptions{
+					ServerAddress: opts.Server,
+					Token:         opts.Token,
+				})
+			}
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
 			}

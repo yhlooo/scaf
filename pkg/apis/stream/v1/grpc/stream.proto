@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package yhlooo.com.scaf.stream.v1;
+
+option go_package = "github.com/yhlooo/scaf/pkg/apis/stream/v1";
+
+import "pkg/apis/meta/v1/grpc/meta.proto";
+import "pkg/apis/meta/v1/grpc/status.proto";
+
+// Streams 流管理和转发服务
+service Streams {
+  rpc CreateStream(Stream) returns (Stream);
+  rpc GetStream(GetStreamRequest) returns (Stream);
+  rpc ListStreams(ListStreamsRequest) returns (StreamList);
+  rpc DeleteStream(DeleteStreamRequest) returns (yhlooo.com.scaf.meta.v1.Status);
+  rpc ConnectStream(stream Package) returns (stream Package);
+}
+
+// GetStreamRequest GetStream 请求
+message GetStreamRequest {
+  string name = 1;
+}
+
+// ListStreamsRequest ListStreams 请求
+message ListStreamsRequest {}
+
+// DeleteStreamRequest DeleteStream 请求
+message DeleteStreamRequest {
+  string name = 1;
+}
+
+// Package 流中传递的包
+message Package {
+  bytes content = 1;
+}
+
+// Stream 流
+message Stream {
+  yhlooo.com.scaf.meta.v1.ObjectMeta metadata = 1;
+
+  StreamSpec spec = 2;
+  StreamStatus status = 3;
+}
+
+// StreamSpec 流定义
+message StreamSpec {
+  // 停止策略
+  string stop_policy = 1;
+}
+
+// StreamStatus 流状态
+message StreamStatus {
+  // 用于加入流的 token
+  string token = 1;
+}
+
+// StreamList 流列表
+message StreamList {
+  yhlooo.com.scaf.meta.v1.ListMeta metadata = 1;
+  repeated Stream items = 2;
+}

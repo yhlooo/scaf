@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package yhlooo.com.scaf.meta.v1;
+
+option go_package = "github.com/yhlooo/scaf/pkg/apis/meta/v1/grpc";
+
+// Status 结果状态
+message Status {
+  int32 code = 1;
+  string reason = 2;
+  string message = 3;
+}

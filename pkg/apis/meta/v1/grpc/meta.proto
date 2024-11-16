@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package yhlooo.com.scaf.meta.v1;
+
+option go_package = "github.com/yhlooo/scaf/pkg/apis/meta/v1/grpc";
+
+// ObjectMeta 对象元信息
+message ObjectMeta {
+  // 对象名
+  string name = 1;
+  // 对象全局唯一 ID
+  string uid = 2;
+}
+
+// ListMeta 列表对象元信息
+message ListMeta {}

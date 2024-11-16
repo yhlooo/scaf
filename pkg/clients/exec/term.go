@@ -21,22 +21,22 @@ const (
 )
 
 // NewTerminal 创建 Terminal
-func NewTerminal(client *common.Client) *Terminal {
+func NewTerminal(client common.Client) *Terminal {
 	return &Terminal{c: client}
 }
 
 // Terminal exec 终端
 type Terminal struct {
-	c *common.Client
+	c common.Client
 }
 
 // Client 返回 Terminal 使用的客户端
-func (t *Terminal) Client() *common.Client {
+func (t *Terminal) Client() common.Client {
 	return t.c
 }
 
 // WithClient 返回使用指定客户端的 Terminal
-func (t *Terminal) WithClient(client *common.Client) *Terminal {
+func (t *Terminal) WithClient(client common.Client) *Terminal {
 	return &Terminal{
 		c: client,
 	}
