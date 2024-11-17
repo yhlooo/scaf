@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -89,10 +90,9 @@ func (t *Terminal) Run(ctx context.Context, streamName string, stdin io.Reader, 
 	}
 
 	// 转发输入输出
-	handleConnDone := make(chan struct{})
-	go t.handleConn(ctx, handleConnDone, conn, stdout, stderr)
-	handleInputDone := make(chan struct{})
-	go t.handleInput(ctx, handleInputDone, conn, stdin)
+	session := NewTerminalSession(conn, stdin, stdout, stderr)
+	go session.HandleConn(ctx)
+	go session.HandleInput(ctx)
 
 	resizeCh := make(chan os.Signal, 1)
 	signal.Notify(resizeCh, syscall.SIGWINCH)
@@ -104,10 +104,10 @@ func (t *Terminal) Run(ctx context.Context, streamName string, stdin io.Reader, 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-handleConnDone:
+		case <-session.HandleConnDone():
 			cancel()
 			return nil
-		case <-handleInputDone:
+		case <-session.HandleInputDone():
 			cancel()
 			return nil
 		case <-resizeCh:
@@ -126,14 +126,34 @@ func (t *Terminal) Run(ctx context.Context, streamName string, stdin io.Reader, 
 	}
 }
 
-// handleConn 处理连接
-func (t *Terminal) handleConn(
-	ctx context.Context,
-	done chan<- struct{},
-	conn streams.Connection,
-	stdout, stderr io.Writer,
-) {
-	defer close(done)
+// NewTerminalSession 创建 *TerminalSession
+func NewTerminalSession(conn streams.Connection, stdin io.Reader, stdout, stderr io.Writer) *TerminalSession {
+	return &TerminalSession{
+		handleConnDone:  make(chan struct{}),
+		handleInputDone: make(chan struct{}),
+		conn:            conn,
+		stdin:           stdin,
+		stdout:          stdout,
+		stderr:          stderr,
+	}
+}
+
+type TerminalSession struct {
+	handleConnDone  chan struct{}
+	handleInputDone chan struct{}
+	conn            streams.Connection
+
+	started bool
+
+	stdin  io.Reader
+	stdout io.Writer
+	stderr io.Writer
+}
+
+// HandleConn 处理连接
+// 只能调用一次
+func (s *TerminalSession) HandleConn(ctx context.Context) {
+	defer close(s.handleConnDone)
 	logger := logr.FromContextOrDiscard(ctx)
 
 	for {
@@ -143,7 +163,7 @@ func (t *Terminal) handleConn(
 		default:
 		}
 
-		data, err := conn.Receive()
+		data, err := s.conn.Receive()
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -164,21 +184,23 @@ func (t *Terminal) handleConn(
 			continue
 		}
 
+		s.started = true
+
 		// 分类处理
 		switch m := msg.(type) {
 		case StdoutData:
-			if _, err := stdout.Write(m); err != nil {
+			if _, err := s.stdout.Write(m); err != nil {
 				logger.Error(err, "write to stdout error")
 			}
 		case StderrData:
-			if _, err := stderr.Write(m); err != nil {
+			if _, err := s.stderr.Write(m); err != nil {
 				logger.Error(err, "write to stderr error")
 			}
 		case ExitCode:
 			if m == 0 {
 				return
 			}
-			if _, err := stderr.Write([]byte(fmt.Sprintf("command exit with code: %d\n", m))); err != nil {
+			if _, err := s.stderr.Write([]byte(fmt.Sprintf("command exit with code: %d\n", m))); err != nil {
 				logger.Error(err, "write to stderr error")
 			}
 			return
@@ -188,14 +210,10 @@ func (t *Terminal) handleConn(
 	}
 }
 
-// handleInput 处理输入
-func (t *Terminal) handleInput(
-	ctx context.Context,
-	done chan<- struct{},
-	conn streams.Connection,
-	inputReader io.Reader,
-) {
-	defer close(done)
+// HandleInput 处理输入
+// 只能调用一次
+func (s *TerminalSession) HandleInput(ctx context.Context) {
+	defer close(s.handleInputDone)
 	logger := logr.FromContextOrDiscard(ctx)
 
 	tmp := make([]byte, maxReadInputSize)
@@ -206,7 +224,7 @@ func (t *Terminal) handleInput(
 		default:
 		}
 
-		n, err := inputReader.Read(tmp)
+		n, err := s.stdin.Read(tmp)
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -221,9 +239,24 @@ func (t *Terminal) handleInput(
 			continue
 		}
 
+		// 没开始，可以通过 Ctrl-C 或 Ctrl-D 退出
+		if !s.started && (bytes.Contains(tmp[:n], []byte{'\x03'}) || bytes.Contains(tmp[:n], []byte{'\x04'})) {
+			return
+		}
+
 		// 编码消息发送到服务端
-		if err := conn.Send(StdinData(tmp[:n]).Raw()); err != nil {
+		if err := s.conn.Send(StdinData(tmp[:n]).Raw()); err != nil {
 			logger.Error(err, "send message to server error")
 		}
 	}
+}
+
+// HandleConnDone 返回处理连接完成通知通道
+func (s *TerminalSession) HandleConnDone() <-chan struct{} {
+	return s.handleConnDone
+}
+
+// HandleInputDone 返回处理输入完成通知通道
+func (s *TerminalSession) HandleInputDone() <-chan struct{} {
+	return s.handleInputDone
 }
