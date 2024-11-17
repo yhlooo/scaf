@@ -12,6 +12,7 @@ import (
 
 	streamv1grpc "github.com/yhlooo/scaf/pkg/apis/stream/v1/grpc"
 	"github.com/yhlooo/scaf/pkg/auth"
+	"github.com/yhlooo/scaf/pkg/server/generic"
 	servergrpc "github.com/yhlooo/scaf/pkg/server/grpc"
 	serverhttp "github.com/yhlooo/scaf/pkg/server/http"
 	"github.com/yhlooo/scaf/pkg/streams"
@@ -46,10 +47,17 @@ func (opts *Options) Complete() {
 // NewServer 创建 *Server
 func NewServer(opts Options) *Server {
 	opts.Complete()
+	authenticator := auth.NewTokenAuthenticator(opts.TokenAuthenticator)
+	streamMgr := streams.NewInMemoryManager()
+	genericServer := generic.NewStreamsServer(generic.Options{
+		TokenAuthenticator: authenticator,
+		StreamManager:      streamMgr,
+	})
 	return &Server{
 		opts:          opts,
-		authenticator: auth.NewTokenAuthenticator(opts.TokenAuthenticator),
-		streamMgr:     streams.NewInMemoryManager(),
+		authenticator: authenticator,
+		streamMgr:     streamMgr,
+		genericServer: genericServer,
 	}
 }
 
@@ -71,6 +79,7 @@ type Server struct {
 
 	authenticator *auth.TokenAuthenticator
 	streamMgr     streams.Manager
+	genericServer *generic.StreamsServer
 }
 
 // Start 启动服务
@@ -91,9 +100,8 @@ func (s *Server) Start(ctx context.Context) error {
 		if err != nil {
 			return
 		}
-		s.httpHandler = serverhttp.NewHTTPHandler(ctx, serverhttp.Options{
-			TokenAuthenticator: s.authenticator,
-			StreamManager:      s.streamMgr,
+		s.httpHandler = serverhttp.NewHTTPHandler(s.genericServer, serverhttp.Options{
+			Logger: logger.WithName("http"),
 		})
 
 		s.grpcListener, err = net.Listen("tcp", s.opts.GRPCAddr)
@@ -101,9 +109,8 @@ func (s *Server) Start(ctx context.Context) error {
 			return
 		}
 		s.grpcServer = grpc.NewServer()
-		s.grpcStreamsServer = servergrpc.NewStreamsServer(ctx, servergrpc.Options{
-			TokenAuthenticator: s.authenticator,
-			StreamManager:      s.streamMgr,
+		s.grpcStreamsServer = servergrpc.NewStreamsServer(s.genericServer, servergrpc.Options{
+			Logger: logger.WithName("grpc"),
 		})
 		streamv1grpc.RegisterStreamsServer(s.grpcServer, s.grpcStreamsServer)
 

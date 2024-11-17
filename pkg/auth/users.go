@@ -2,6 +2,7 @@ package auth
 
 const (
 	AdminUsername        = "system:admin"
+	AnonymousUsername    = "system:anonymous"
 	StreamUsernamePrefix = "system:stream:"
 )
 

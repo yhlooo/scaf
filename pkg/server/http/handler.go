@@ -3,67 +3,57 @@ package http
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"github.com/yhlooo/scaf/pkg/apierrors"
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
-	"github.com/yhlooo/scaf/pkg/auth"
+	"github.com/yhlooo/scaf/pkg/server/generic"
 	"github.com/yhlooo/scaf/pkg/streams"
 )
 
 const (
-	loggerName = "http"
-
 	// ConnectionNameHeader 连接名头
 	ConnectionNameHeader = "X-Scaf-Connection-Name"
 )
 
 // Options 选项
 type Options struct {
-	TokenAuthenticator *auth.TokenAuthenticator
-	StreamManager      streams.Manager
+	Logger logr.Logger
 }
 
 // NewHTTPHandler 创建 HTTP 请求处理器
-func NewHTTPHandler(ctx context.Context, opts Options) http.Handler {
-	logger := logr.FromContextOrDiscard(ctx).WithName(loggerName)
-
+func NewHTTPHandler(genericServer *generic.StreamsServer, opts Options) http.Handler {
 	handlers := &httpHandlers{
-		logger:        logger,
-		streamMgr:     opts.StreamManager,
-		authenticator: opts.TokenAuthenticator,
+		logger:        opts.Logger,
+		genericServer: genericServer,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/streams", handlers.HandleCreateStream)
 	mux.HandleFunc("GET /v1/streams", handlers.HandleListStreams)
-	mux.HandleFunc("GET /v1/streams/{name}", handlers.HandleGetStream)
+	mux.HandleFunc("GET /v1/streams/{name}", handlers.HandleGetOrConnectStream)
 	mux.HandleFunc("DELETE /v1/streams/{name}", handlers.HandleDeleteStream)
 	return mux
 }
 
 // httpHandlers HTTP 请求处理器
 type httpHandlers struct {
+	genericServer *generic.StreamsServer
 	logger        logr.Logger
-	streamMgr     streams.Manager
-	authenticator *auth.TokenAuthenticator
 }
 
 // HandleCreateStream 处理创建流
 func (h *httpHandlers) HandleCreateStream(w http.ResponseWriter, req *http.Request) {
-	logger := h.logger.WithValues(
-		"request", "CreateStream",
-	)
-	ctx := logr.NewContext(req.Context(), logger)
-	req = req.WithContext(ctx)
+	ctx := h.newContext(req, "request", "CreateStream")
+	logger := logr.FromContextOrDiscard(ctx)
 	logger.Info("request received")
 
 	defer func() {
@@ -82,96 +72,38 @@ func (h *httpHandlers) HandleCreateStream(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	s := streams.NewBufferedStream()
-	ins, err := h.streamMgr.CreateStream(ctx, &streams.StreamInstance{
-		StopPolicy: streams.StreamStopPolicy(stream.Spec.StopPolicy),
-		Stream:     s,
-	})
+	ret, err := h.genericServer.CreateStream(ctx, stream)
 	if err != nil {
-		logger.Error(err, "create stream error")
-		responseStatus(ctx, w, apierrors.NewInternalServerError(err))
+		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
 	}
-
-	obj := newStreamAPIObject(ins)
-	obj.Status.Token, err = h.authenticator.IssueToken(auth.StreamUsername(obj.Name), 0)
-	if err != nil {
-		logger.Error(err, "issue stream token error")
-		responseStatus(ctx, w, apierrors.NewInternalServerError(fmt.Errorf("issue stream token error: %w", err)))
-		return
-	}
-
-	responseJSON(ctx, w, http.StatusCreated, obj)
+	responseJSON(ctx, w, http.StatusCreated, ret)
 }
 
 // HandleListStreams 处理列出流
 func (h *httpHandlers) HandleListStreams(w http.ResponseWriter, req *http.Request) {
-	logger := h.logger.WithValues(
-		"request", "ListStreams",
-	)
-	ctx := logr.NewContext(req.Context(), logger)
-	req = req.WithContext(ctx)
+	ctx := h.newContext(req, "request", "ListStreams")
+	logger := logr.FromContextOrDiscard(ctx)
 	logger.Info("request received")
 
-	username, err := h.getUsername(req)
+	ret, err := h.genericServer.ListStreams(ctx)
 	if err != nil {
-		responseStatus(ctx, w, apierrors.NewUnauthorizedError(err))
+		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
 	}
-	if !auth.IsAdmin(username) {
-		responseStatus(ctx, w, apierrors.NewForbiddenError(fmt.Errorf(
-			"user %q is not allowed to list streams",
-			username,
-		)))
-	}
-
-	streamList, err := h.streamMgr.ListStreams(ctx)
-	if err != nil {
-		logger.Error(err, "list stream error")
-		responseStatus(ctx, w, apierrors.NewInternalServerError(err))
-		return
-	}
-
-	ret := &streamv1.StreamList{}
-	for _, ins := range streamList {
-		ret.Items = append(ret.Items, *newStreamAPIObject(ins))
-	}
-
 	responseJSON(ctx, w, http.StatusOK, ret)
 }
 
-// HandleGetStream 处理获取流
-func (h *httpHandlers) HandleGetStream(w http.ResponseWriter, req *http.Request) {
+// HandleGetOrConnectStream 处理获取或连接流
+func (h *httpHandlers) HandleGetOrConnectStream(w http.ResponseWriter, req *http.Request) {
 	streamName := req.PathValue("name")
-	logger := h.logger.WithValues(
-		"request", "GetStream",
-		"streamID", streamName,
-	)
-	ctx := logr.NewContext(req.Context(), logger)
-	req = req.WithContext(ctx)
+	ctx := h.newContext(req, "request", "GetOrConnectStream", "stream", streamName)
+	logger := logr.FromContextOrDiscard(ctx)
 	logger.Info("request received")
 
-	username, err := h.getUsername(req)
+	ins, err := h.genericServer.GetStreamInstance(ctx, streamName)
 	if err != nil {
-		responseStatus(ctx, w, apierrors.NewUnauthorizedError(err))
-		return
-	}
-	if !auth.IsAdmin(username) && !auth.IsStream(username, streamName) {
-		responseStatus(ctx, w, apierrors.NewForbiddenError(fmt.Errorf(
-			"user %q is not allowed to get stream %q",
-			username, streamName,
-		)))
-	}
-
-	ins, err := h.streamMgr.GetStream(ctx, streams.UID(streamName))
-	if err != nil {
-		logger.Error(err, "get stream error")
-		switch {
-		case errors.Is(err, streams.ErrStreamNotFound):
-			responseStatus(ctx, w, apierrors.NewNotFoundError(err))
-		default:
-			responseStatus(ctx, w, apierrors.NewInternalServerError(err))
-		}
+		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
 	}
 
@@ -213,57 +145,40 @@ func (h *httpHandlers) HandleGetStream(w http.ResponseWriter, req *http.Request)
 		return
 	}
 
-	responseJSON(ctx, w, http.StatusOK, newStreamAPIObject(ins))
+	responseJSON(ctx, w, http.StatusOK, generic.NewStreamAPIObject(ins))
 }
 
 // HandleDeleteStream 处理删除流
 func (h *httpHandlers) HandleDeleteStream(w http.ResponseWriter, req *http.Request) {
 	streamName := req.PathValue("name")
-	logger := h.logger.WithValues(
-		"request", "DeleteStream",
-		"streamID", streamName,
-	)
-	ctx := logr.NewContext(req.Context(), logger)
-	req = req.WithContext(ctx)
+	ctx := h.newContext(req, "request", "DeleteStream", "stream", streamName)
+	logger := logr.FromContextOrDiscard(ctx)
 	logger.Info("request received")
 
-	username, err := h.getUsername(req)
+	err := h.genericServer.DeleteStream(ctx, req.PathValue("name"))
 	if err != nil {
-		responseStatus(ctx, w, apierrors.NewUnauthorizedError(err))
-		return
-	}
-	if !auth.IsAdmin(username) && !auth.IsStream(username, streamName) {
-		responseStatus(ctx, w, apierrors.NewForbiddenError(fmt.Errorf(
-			"user %q is not allowed to delete stream %q",
-			username, streamName,
-		)))
-	}
-
-	if err := h.streamMgr.DeleteStream(ctx, streams.UID(streamName)); err != nil {
-		logger.Error(err, "delete stream error")
-		switch {
-		case errors.Is(err, streams.ErrStreamNotFound):
-			responseStatus(ctx, w, apierrors.NewNotFoundError(err))
-		default:
-			responseStatus(ctx, w, apierrors.NewInternalServerError(err))
-		}
+		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
 	}
 	responseStatus(ctx, w, newOKStatus())
 }
 
-// getUsername 从获取认证的用户名
-func (h *httpHandlers) getUsername(req *http.Request) (string, error) {
-	token := req.Header.Get("Authorization")
-	if token == "" {
-		return "", fmt.Errorf("missing token")
-	}
-	if !strings.HasPrefix(strings.ToLower(token), "bearer ") {
-		return "", fmt.Errorf("invalid token: %q", token)
-	}
-	token = token[7:]
+// newContext 创建请求上下文
+func (h *httpHandlers) newContext(req *http.Request, keyValues ...any) context.Context {
+	ctx := req.Context()
 
-	return h.authenticator.AuthenticateToken(token)
+	// 注入 logger
+	keyValues = append(keyValues, "reqID", uuid.New().String())
+	ctx = logr.NewContext(ctx, h.logger.WithValues(keyValues...))
+
+	// 注入 token
+	token := req.Header.Get("Authorization")
+	if token != "" && strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		token = token[7:]
+		ctx = generic.NewContextWithToken(ctx, token)
+	}
+
+	return ctx
 }
 
 // newOKStatus 创建普通正常状态
@@ -295,17 +210,4 @@ func responseJSON(ctx context.Context, w http.ResponseWriter, code int, ret inte
 // responseStatus 发送 *metav1.Status 相应
 func responseStatus(ctx context.Context, w http.ResponseWriter, status *metav1.Status) {
 	responseJSON(ctx, w, status.Code, status)
-}
-
-// newStreamAPIObject 基于流实例创建流 API 对象
-func newStreamAPIObject(ins *streams.StreamInstance) *streamv1.Stream {
-	return &streamv1.Stream{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: string(ins.UID), // TODO: 流名暂不支持自定义
-			UID:  string(ins.UID),
-		},
-		Spec: streamv1.StreamSpec{
-			StopPolicy: streamv1.StreamStopPolicy(ins.StopPolicy),
-		},
-	}
 }

@@ -2,7 +2,7 @@ package v1
 
 import (
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
-	"github.com/yhlooo/scaf/pkg/apis/meta/v1/grpc"
+	metav1grpc "github.com/yhlooo/scaf/pkg/apis/meta/v1/grpc"
 	streamv1grpc "github.com/yhlooo/scaf/pkg/apis/stream/v1/grpc"
 )
 
@@ -55,10 +55,10 @@ func NewStreamFromGRPC(in *streamv1grpc.Stream) *Stream {
 	}
 }
 
-// NewGRPCStream 基于 *streamv1grpc.Stream 基于 *Stream
+// NewGRPCStream 基于 *Stream 创建 *streamv1grpc.Stream
 func NewGRPCStream(in *Stream) *streamv1grpc.Stream {
 	return &streamv1grpc.Stream{
-		Metadata: &grpc.ObjectMeta{
+		Metadata: &metav1grpc.ObjectMeta{
 			Name: in.Name,
 			Uid:  in.UID,
 		},
@@ -87,4 +87,15 @@ func NewStreamListFromGRPC(in *streamv1grpc.StreamList) *StreamList {
 	return &StreamList{
 		Items: items,
 	}
+}
+
+// NewGRPCStreamList 基于 *StreamList 创建 *streamv1grpc.StreamList
+func NewGRPCStreamList(in *StreamList) *streamv1grpc.StreamList {
+	ret := &streamv1grpc.StreamList{
+		Metadata: &metav1grpc.ListMeta{},
+	}
+	for _, item := range in.Items {
+		ret.Items = append(ret.Items, NewGRPCStream(&item))
+	}
+	return ret
 }
