@@ -9,6 +9,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+
+	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
+	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 )
 
 // NewInMemoryManager 创建 InMemoryManager
@@ -19,7 +22,7 @@ func NewInMemoryManager() *InMemoryManager {
 // InMemoryManager 是 Manager 的基于内存的实现
 type InMemoryManager struct {
 	streamsLock sync.RWMutex
-	streams     map[UID]*StreamInstance
+	streams     map[metav1.UID]*StreamInstance
 }
 
 var _ Manager = &InMemoryManager{}
@@ -34,16 +37,17 @@ func (mgr *InMemoryManager) CreateStream(ctx context.Context, ins *StreamInstanc
 
 	mgr.streamsLock.Lock()
 	defer mgr.streamsLock.Unlock()
-	ins.UID = UID(uuid.New().String())
+	ins.Object.UID = metav1.UID(uuid.New().String())
+	ins.Object.Name = string(ins.Object.UID) // TODO: 名暂时只能和 uid 一致
 	if mgr.streams == nil {
-		mgr.streams = make(map[UID]*StreamInstance)
+		mgr.streams = make(map[metav1.UID]*StreamInstance)
 	}
-	mgr.streams[ins.UID] = ins
+	mgr.streams[ins.Object.UID] = ins
 
-	switch ins.StopPolicy {
-	case OnFirstConnectionLeft:
+	switch ins.Object.Spec.StopPolicy {
+	case streamv1.OnFirstConnectionLeft:
 		go stopStreamOnFirstConnectionLeft(ctx, ins)
-	case OnBothConnectionsLeft:
+	case streamv1.OnBothConnectionsLeft:
 		go stopStreamOnBothConnectionsLeft(ctx, ins)
 	}
 
@@ -63,13 +67,13 @@ func (mgr *InMemoryManager) ListStreams(_ context.Context) ([]*StreamInstance, e
 	}
 	// 按 uid 排序，保持结果稳定
 	sort.Slice(streams, func(i, j int) bool {
-		return streams[i].UID < streams[j].UID
+		return streams[i].Object.UID < streams[j].Object.UID
 	})
 	return streams, nil
 }
 
 // GetStream 获取流
-func (mgr *InMemoryManager) GetStream(_ context.Context, uid UID) (*StreamInstance, error) {
+func (mgr *InMemoryManager) GetStream(_ context.Context, uid metav1.UID) (*StreamInstance, error) {
 	mgr.streamsLock.RLock()
 	defer mgr.streamsLock.RUnlock()
 	stream, ok := mgr.streams[uid]
@@ -80,7 +84,7 @@ func (mgr *InMemoryManager) GetStream(_ context.Context, uid UID) (*StreamInstan
 }
 
 // DeleteStream 停止并删除流
-func (mgr *InMemoryManager) DeleteStream(ctx context.Context, uid UID) error {
+func (mgr *InMemoryManager) DeleteStream(ctx context.Context, uid metav1.UID) error {
 	mgr.streamsLock.RLock()
 	stream, ok := mgr.streams[uid]
 	mgr.streamsLock.RUnlock()
@@ -107,7 +111,7 @@ func stopStreamOnFirstConnectionLeft(ctx context.Context, ins *StreamInstance) {
 	for event := range ins.Stream.ConnectionEvents() {
 		if event.Type == LeftEvent {
 			if err := ins.Stream.Stop(ctx); err != nil {
-				logger.Error(err, fmt.Sprintf("stop stream %q error", ins.UID))
+				logger.Error(err, fmt.Sprintf("stop stream %q error", ins.Object.UID))
 			}
 		}
 	}
@@ -126,7 +130,7 @@ func stopStreamOnBothConnectionsLeft(ctx context.Context, ins *StreamInstance) {
 		}
 		if connCnt <= 0 {
 			if err := ins.Stream.Stop(ctx); err != nil {
-				logger.Error(err, fmt.Sprintf("stop stream %q error", ins.UID))
+				logger.Error(err, fmt.Sprintf("stop stream %q error", ins.Object.UID))
 			}
 		}
 	}

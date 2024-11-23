@@ -11,6 +11,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/go-logr/logr"
 
+	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 	"github.com/yhlooo/scaf/pkg/clients/common"
 	"github.com/yhlooo/scaf/pkg/streams"
 )
@@ -43,11 +44,22 @@ func (agent *Agent) WithClient(client common.Client) *Agent {
 
 // Run 与服务端建立连接并运行命令
 // 阻塞直到运行结束
-func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd, tty bool) error {
+func (agent *Agent) Run(ctx context.Context, stream *streamv1.Stream) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	streamName := stream.Name
+	command, input, tty, err := GetExecOptions(stream)
+	if err != nil {
+		return fmt.Errorf("get exec options error: %w", err)
+	}
+	if len(command) < 1 {
+		return fmt.Errorf("exec command is empty")
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	logger := logr.FromContextOrDiscard(ctx)
+	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
 
 	// 与服务端建立连接
 	conn, err := agent.c.ConnectStream(ctx, streamName, common.ConnectStreamOptions{
@@ -80,24 +92,31 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd, t
 		outputReader = ptmx
 	} else {
 		// 设置命令输入输出管道
-		stdinR, stdinW := io.Pipe()
 		stdoutR, stdoutW := io.Pipe()
 		stderrR, stderrW := io.Pipe()
 		defer func() {
-			_ = stdinR.Close()
-			_ = stdinW.Close()
 			_ = stdoutR.Close()
 			_ = stdoutW.Close()
 			_ = stderrR.Close()
 			_ = stderrW.Close()
 		}()
-		inputWriter = stdinW
 		outputReader = stdoutR
 		errorReader = stderrR
 
-		cmd.Stdin = stdinR
 		cmd.Stdout = stdoutW
 		cmd.Stderr = stderrW
+
+		if input {
+			stdinR, stdinW := io.Pipe()
+			defer func() {
+				_ = stdinR.Close()
+				_ = stdinW.Close()
+			}()
+
+			inputWriter = stdinW
+			cmd.Stdin = stdinR
+		}
+
 		if err := cmd.Start(); err != nil {
 			return fmt.Errorf("start command error: %w", err)
 		}
@@ -105,7 +124,7 @@ func (agent *Agent) Run(ctx context.Context, streamName string, cmd *exec.Cmd, t
 
 	// 转发输入输出
 	handleConnDone := make(chan struct{})
-	go agent.handleConn(ctx, handleConnDone, conn, inputWriter)
+	go agent.handleConn(ctx, handleConnDone, conn, inputWriter, input)
 	handleStdoutDone := make(chan struct{})
 	go agent.handleOutput(ctx, handleStdoutDone, conn, outputReader, false)
 	if errorReader != nil {
@@ -149,11 +168,15 @@ func (agent *Agent) handleConn(
 	done chan<- struct{},
 	conn streams.Connection,
 	stdinWriter io.Writer,
+	input bool,
 ) {
 	defer close(done)
 	logger := logr.FromContextOrDiscard(ctx)
 
-	stdinFile, _ := stdinWriter.(*os.File)
+	var stdinFile *os.File
+	if stdinWriter != nil {
+		stdinFile, _ = stdinWriter.(*os.File)
+	}
 
 	for {
 		select {
@@ -186,8 +209,10 @@ func (agent *Agent) handleConn(
 		// 分类处理
 		switch m := msg.(type) {
 		case StdinData:
-			if _, err := stdinWriter.Write(m); err != nil {
-				logger.Error(err, "write to stdin error")
+			if input {
+				if _, err := stdinWriter.Write(m); err != nil {
+					logger.Error(err, "write to stdin error")
+				}
 			}
 		case Resize:
 			if stdinFile == nil {

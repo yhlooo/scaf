@@ -13,6 +13,7 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/term"
 
+	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 	"github.com/yhlooo/scaf/pkg/clients/common"
 	"github.com/yhlooo/scaf/pkg/streams"
 )
@@ -45,14 +46,19 @@ func (t *Terminal) WithClient(client common.Client) *Terminal {
 
 // Run 与服务端建立连接并转发输入输出
 // 阻塞直到运行结束
-func (t *Terminal) Run(ctx context.Context, streamName string, stdin io.Reader, stdout, stderr io.Writer, tty bool) error {
+func (t *Terminal) Run(ctx context.Context, stream *streamv1.Stream, stdin io.Reader, stdout, stderr io.Writer) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	_, input, tty, err := GetExecOptions(stream)
+	if err != nil {
+		return fmt.Errorf("get stream options error: %w", err)
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	logger := logr.FromContextOrDiscard(ctx)
-
 	// 与服务端建立连接
-	conn, err := t.c.ConnectStream(ctx, streamName, common.ConnectStreamOptions{
+	conn, err := t.c.ConnectStream(ctx, stream.Name, common.ConnectStreamOptions{
 		ConnectionName: "terminal",
 	})
 	if err != nil {
@@ -90,7 +96,7 @@ func (t *Terminal) Run(ctx context.Context, streamName string, stdin io.Reader, 
 	}
 
 	// 转发输入输出
-	session := NewTerminalSession(conn, stdin, stdout, stderr)
+	session := NewTerminalSession(conn, stdin, stdout, stderr, input)
 	go session.HandleConn(ctx)
 	go session.HandleInput(ctx)
 
@@ -127,7 +133,12 @@ func (t *Terminal) Run(ctx context.Context, streamName string, stdin io.Reader, 
 }
 
 // NewTerminalSession 创建 *TerminalSession
-func NewTerminalSession(conn streams.Connection, stdin io.Reader, stdout, stderr io.Writer) *TerminalSession {
+func NewTerminalSession(
+	conn streams.Connection,
+	stdin io.Reader,
+	stdout, stderr io.Writer,
+	input bool,
+) *TerminalSession {
 	return &TerminalSession{
 		handleConnDone:  make(chan struct{}),
 		handleInputDone: make(chan struct{}),
@@ -135,6 +146,7 @@ func NewTerminalSession(conn streams.Connection, stdin io.Reader, stdout, stderr
 		stdin:           stdin,
 		stdout:          stdout,
 		stderr:          stderr,
+		input:           input,
 	}
 }
 
@@ -148,6 +160,7 @@ type TerminalSession struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+	input  bool
 }
 
 // HandleConn 处理连接
@@ -239,14 +252,17 @@ func (s *TerminalSession) HandleInput(ctx context.Context) {
 			continue
 		}
 
-		// 没开始，可以通过 Ctrl-C 或 Ctrl-D 退出
-		if !s.started && (bytes.Contains(tmp[:n], []byte{'\x03'}) || bytes.Contains(tmp[:n], []byte{'\x04'})) {
+		// 没开始或禁用输入，可以通过 Ctrl-C 或 Ctrl-D 退出
+		if (!s.started || !s.input) &&
+			(bytes.Contains(tmp[:n], []byte{'\x03'}) || bytes.Contains(tmp[:n], []byte{'\x04'})) {
 			return
 		}
 
 		// 编码消息发送到服务端
-		if err := s.conn.Send(StdinData(tmp[:n]).Raw()); err != nil {
-			logger.Error(err, "send message to server error")
+		if s.input {
+			if err := s.conn.Send(StdinData(tmp[:n]).Raw()); err != nil {
+				logger.Error(err, "send message to server error")
+			}
 		}
 	}
 }

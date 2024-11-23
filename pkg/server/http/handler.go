@@ -145,7 +145,7 @@ func (h *httpHandlers) HandleGetOrConnectStream(w http.ResponseWriter, req *http
 		return
 	}
 
-	responseJSON(ctx, w, http.StatusOK, generic.NewStreamAPIObject(ins))
+	responseJSON(ctx, w, http.StatusOK, &ins.Object)
 }
 
 // HandleDeleteStream 处理删除流

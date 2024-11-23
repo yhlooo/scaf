@@ -41,8 +41,8 @@ func (s *StreamsServer) CreateStream(ctx context.Context, stream *streamv1.Strea
 	// 创建流
 	strm := streams.NewBufferedStream()
 	ins, err := s.streamMgr.CreateStream(ctx, &streams.StreamInstance{
-		StopPolicy: streams.StreamStopPolicy(stream.Spec.StopPolicy),
-		Stream:     strm,
+		Object: *stream,
+		Stream: strm,
 	})
 	if err != nil {
 		logger.Error(err, "create stream error")
@@ -50,7 +50,7 @@ func (s *StreamsServer) CreateStream(ctx context.Context, stream *streamv1.Strea
 	}
 
 	// 签发 token
-	obj := NewStreamAPIObject(ins)
+	obj := &ins.Object
 	obj.Status.Token, err = s.authenticator.IssueToken(auth.StreamUsername(obj.Name), 0)
 	if err != nil {
 		logger.Error(err, "issue stream token error")
@@ -66,7 +66,7 @@ func (s *StreamsServer) GetStream(ctx context.Context, name string) (*streamv1.S
 	if err != nil {
 		return nil, err
 	}
-	return NewStreamAPIObject(ins), nil
+	return &ins.Object, nil
 }
 
 // GetStreamInstance 获取流实例
@@ -85,7 +85,7 @@ func (s *StreamsServer) GetStreamInstance(ctx context.Context, name string) (*st
 	}
 
 	// 获取流
-	ins, err := s.streamMgr.GetStream(ctx, streams.UID(name))
+	ins, err := s.streamMgr.GetStream(ctx, metav1.UID(name))
 	if err != nil {
 		logger.Error(err, "get stream error")
 		switch {
@@ -122,7 +122,7 @@ func (s *StreamsServer) ListStreams(ctx context.Context) (*streamv1.StreamList, 
 
 	ret := &streamv1.StreamList{}
 	for _, ins := range streamList {
-		ret.Items = append(ret.Items, *NewStreamAPIObject(ins))
+		ret.Items = append(ret.Items, ins.Object)
 	}
 
 	return ret, nil
@@ -143,7 +143,7 @@ func (s *StreamsServer) DeleteStream(ctx context.Context, name string) error {
 		return apierrors.NewForbiddenError(err)
 	}
 
-	if err := s.streamMgr.DeleteStream(ctx, streams.UID(name)); err != nil {
+	if err := s.streamMgr.DeleteStream(ctx, metav1.UID(name)); err != nil {
 		logger.Error(err, "delete stream error")
 		switch {
 		case errors.Is(err, streams.ErrStreamNotFound):
@@ -163,17 +163,4 @@ func (s *StreamsServer) getUsername(ctx context.Context) (string, error) {
 		return auth.AnonymousUsername, nil
 	}
 	return s.authenticator.AuthenticateToken(token)
-}
-
-// NewStreamAPIObject 基于流实例创建流 API 对象
-func NewStreamAPIObject(ins *streams.StreamInstance) *streamv1.Stream {
-	return &streamv1.Stream{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: string(ins.UID), // TODO: 流名暂不支持自定义
-			UID:  string(ins.UID),
-		},
-		Spec: streamv1.StreamSpec{
-			StopPolicy: streamv1.StreamStopPolicy(ins.StopPolicy),
-		},
-	}
 }

@@ -10,6 +10,8 @@ message ObjectMeta {
   string name = 1;
   // 对象全局唯一 ID
   string uid = 2;
+  // 注解
+  map<string,string> annotations = 3;
 }
 
 // ListMeta 列表对象元信息

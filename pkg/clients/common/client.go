@@ -2,6 +2,8 @@ package common
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 	"github.com/yhlooo/scaf/pkg/streams"
@@ -26,4 +28,27 @@ type Client interface {
 // ConnectStreamOptions 连接到流选项
 type ConnectStreamOptions struct {
 	ConnectionName string
+}
+
+// NewClient 创建客户端
+func NewClient(server string, token string) (Client, error) {
+	urlObj, err := url.Parse(server)
+	if err != nil {
+		return nil, fmt.Errorf("invalid server url %q: %w", server, err)
+	}
+
+	switch urlObj.Scheme {
+	case "http", "https":
+		return NewHTTPClient(HTTPClientOptions{
+			ServerURL: server,
+			Token:     token,
+		})
+	case "grpc":
+		return NewGRPCClient(GRPCClientOptions{
+			ServerAddress: urlObj.Host,
+			Token:         token,
+		})
+	}
+
+	return nil, fmt.Errorf("invalid server url %q: unsupported scheme %q", server, urlObj.Scheme)
 }

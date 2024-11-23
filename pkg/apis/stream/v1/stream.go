@@ -23,6 +23,15 @@ type StreamSpec struct {
 // StreamStopPolicy 流停止策略
 type StreamStopPolicy string
 
+const (
+	// OnFirstConnectionLeft 第一次连接断开时停止
+	OnFirstConnectionLeft StreamStopPolicy = "OnFirstConnectionLeft"
+	// OnBothConnectionsLeft 两个连接都断开时停止
+	OnBothConnectionsLeft StreamStopPolicy = "OnBothConnectionsLeft"
+	// OnDelete 流被删除时停止
+	OnDelete StreamStopPolicy = "OnDelete"
+)
+
 // StreamStatus 流状态
 type StreamStatus struct {
 	// 用于加入流的 token
@@ -43,8 +52,9 @@ func NewStreamFromGRPC(in *streamv1grpc.Stream) *Stream {
 	}
 	return &Stream{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: in.GetMetadata().GetName(),
-			UID:  in.GetMetadata().GetUid(),
+			Name:        in.GetMetadata().GetName(),
+			UID:         metav1.UID(in.GetMetadata().GetUid()),
+			Annotations: in.GetMetadata().GetAnnotations(),
 		},
 		Spec: StreamSpec{
 			StopPolicy: StreamStopPolicy(in.GetSpec().GetStopPolicy()),
@@ -57,10 +67,14 @@ func NewStreamFromGRPC(in *streamv1grpc.Stream) *Stream {
 
 // NewGRPCStream 基于 *Stream 创建 *streamv1grpc.Stream
 func NewGRPCStream(in *Stream) *streamv1grpc.Stream {
+	if in == nil {
+		return nil
+	}
 	return &streamv1grpc.Stream{
 		Metadata: &metav1grpc.ObjectMeta{
-			Name: in.Name,
-			Uid:  in.UID,
+			Name:        in.Name,
+			Uid:         string(in.UID),
+			Annotations: in.Annotations,
 		},
 		Spec: &streamv1grpc.StreamSpec{
 			StopPolicy: string(in.Spec.StopPolicy),
@@ -91,6 +105,9 @@ func NewStreamListFromGRPC(in *streamv1grpc.StreamList) *StreamList {
 
 // NewGRPCStreamList 基于 *StreamList 创建 *streamv1grpc.StreamList
 func NewGRPCStreamList(in *StreamList) *streamv1grpc.StreamList {
+	if in == nil {
+		return nil
+	}
 	ret := &streamv1grpc.StreamList{
 		Metadata: &metav1grpc.ListMeta{},
 	}

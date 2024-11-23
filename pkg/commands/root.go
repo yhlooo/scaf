@@ -46,6 +46,7 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 		NewServeCommandWithOptions(&opts.Serve),
 		NewAttachCommandWithOptions(&opts.Attach),
 		NewExecCommandWithOptions(&opts.Exec),
+		NewExecRemoteCommandWithOptions(&opts.ExecRemote),
 		NewVersionCommandWithOptions(&opts.Version),
 	)
 

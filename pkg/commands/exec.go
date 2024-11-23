@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -17,70 +16,76 @@ import (
 // NewExecCommandWithOptions 基于选项创建 exec 子命令
 func NewExecCommandWithOptions(opts *options.ExecOptions) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "exec -- COMMAND [ARGS...]",
+		Use:   "exec [-- COMMAND [ARGS...]]",
 		Short: "Execute command and forward input and output through stream",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return fmt.Errorf("the command to be executed must be specified")
-			}
+		Example: `# Create a new stream
+scaf exec [-i] [-t] -s SERVER -- COMMAND [ARGS...]
 
+# Join an existing stream
+scaf exec -s SERVER --stream STREAM --token TOKEN`,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			logger := logr.FromContextOrDiscard(ctx)
 
 			// 创建客户端
-			var client clientscommon.Client
-			var err error
-			switch {
-			case opts.HTTP:
-				client, err = clientscommon.NewHTTPClient(clientscommon.HTTPClientOptions{
-					ServerURL: opts.Server,
-					Token:     opts.Token,
-				})
-			case opts.GRPC:
-				client, err = clientscommon.NewGRPCClient(clientscommon.GRPCClientOptions{
-					ServerAddress: opts.Server,
-					Token:         opts.Token,
-				})
-			default:
-				// TODO: 应该自动判断服务端支持什么模式，这里暂时使用 gRPC
-				client, err = clientscommon.NewGRPCClient(clientscommon.GRPCClientOptions{
-					ServerAddress: opts.Server,
-					Token:         opts.Token,
-				})
-			}
+			client, err := clientscommon.NewClient(opts.Server, opts.Token)
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
 			}
 			agent := clientsexec.NewAgent(client)
 
-			// 创建流
-			streamName := opts.Stream
-			if streamName == "" {
-				stream, err := client.CreateStream(ctx, &streamv1.Stream{})
+			var stream *streamv1.Stream
+			if opts.Stream != "" {
+				// 获取流
+				stream, err = client.GetStream(ctx, opts.Stream)
+				if err != nil {
+					return fmt.Errorf("get stream %q error: %w", opts.Stream, err)
+				}
+				// 解析执行信息
+				command, input, tty, err := clientsexec.GetExecOptions(stream)
+				if err != nil {
+					return fmt.Errorf("get exec options error: %w", err)
+				}
+				fmt.Printf("Command: %q\n", command)
+				fmt.Printf("Input:   %t\n", input)
+				fmt.Printf("TTY:     %t\n", tty)
+				// 二次确认
+				if !opts.Yes {
+					fmt.Print("Continue? (Y/n): ")
+					confirm := ""
+					_, _ = fmt.Scanln(&confirm)
+					if confirm != "Y" {
+						fmt.Println("abort")
+						return nil
+					}
+				}
+			} else {
+				// 创建流
+				stream = clientsexec.NewExecStream(args, opts.Input, opts.TTY)
+				newStream, err := client.CreateStream(ctx, stream)
 				if err != nil {
 					return fmt.Errorf("create stream error: %w", err)
 				}
-				streamName = stream.Name
 				defer func() {
-					if err := client.DeleteStream(ctx, streamName); err != nil {
+					if err := client.DeleteStream(ctx, stream.Name); err != nil {
 						logger.Error(err, "delete stream error")
 					}
 				}()
-				fmt.Printf("Stream: %s\n", streamName)
-				attachCmd := []string{"scaf", "attach", "--stream", streamName}
-				if stream.Status.Token != "" {
-					fmt.Printf("Token: %s\n", stream.Status.Token)
-					attachCmd = append(attachCmd, "--token", stream.Status.Token)
-					client = client.WithToken(stream.Status.Token)
+				stream.Name = newStream.Name // 不直接使用 newStream 是避免被恶意的服务端返回内容篡改实际执行的命令
+				stream.UID = newStream.UID
+
+				fmt.Printf("Stream: %s\n", newStream.Name)
+				attachCmd := []string{"scaf", "attach", "-s", opts.Server, "--stream", newStream.Name}
+				if newStream.Status.Token != "" {
+					fmt.Printf("Token: %s\n", newStream.Status.Token)
+					attachCmd = append(attachCmd, "--token", newStream.Status.Token)
+					client = client.WithToken(newStream.Status.Token)
 					agent = agent.WithClient(client)
 				}
-				if opts.TTY {
-					attachCmd = append(attachCmd, "-t")
-				}
-				fmt.Printf("Start exec command: %s", strings.Join(attachCmd, " "))
+				fmt.Printf("Start exec command: %s\n", strings.Join(attachCmd, " "))
 			}
 
-			return agent.Run(ctx, streamName, exec.CommandContext(ctx, args[0], args[1:]...), opts.TTY)
+			return agent.Run(ctx, stream)
 		},
 	}
 
