@@ -64,8 +64,9 @@ func (t *Terminal) Run(ctx context.Context, stream *streamv1.Stream, stdin io.Re
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
+	conn = streams.ConnectionWithLog{Connection: conn}
 	defer func() {
-		_ = conn.Close()
+		_ = conn.Close(ctx)
 	}()
 
 	// 设置输入流
@@ -88,7 +89,7 @@ func (t *Terminal) Run(ctx context.Context, stream *streamv1.Stream, stdin io.Re
 			if err != nil {
 				logger.Error(err, "get terminal size error")
 			} else {
-				if err := conn.Send(Resize{Height: uint16(h), Width: uint16(w)}.Raw()); err != nil {
+				if err := conn.Send(ctx, Resize{Height: uint16(h), Width: uint16(w)}.Raw()); err != nil {
 					logger.Error(err, "send resize message error")
 				}
 			}
@@ -125,7 +126,7 @@ func (t *Terminal) Run(ctx context.Context, stream *streamv1.Stream, stdin io.Re
 				logger.Error(err, "get terminal size error")
 				continue
 			}
-			if err := conn.Send(Resize{Height: uint16(h), Width: uint16(w)}.Raw()); err != nil {
+			if err := conn.Send(ctx, Resize{Height: uint16(h), Width: uint16(w)}.Raw()); err != nil {
 				logger.Error(err, "send resize message error")
 			}
 		}
@@ -176,7 +177,7 @@ func (s *TerminalSession) HandleConn(ctx context.Context) {
 		default:
 		}
 
-		data, err := s.conn.Receive()
+		data, err := s.conn.Receive(ctx)
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -260,7 +261,7 @@ func (s *TerminalSession) HandleInput(ctx context.Context) {
 
 		// 编码消息发送到服务端
 		if s.input {
-			if err := s.conn.Send(StdinData(tmp[:n]).Raw()); err != nil {
+			if err := s.conn.Send(ctx, StdinData(tmp[:n]).Raw()); err != nil {
 				logger.Error(err, "send message to server error")
 			}
 		}

@@ -68,8 +68,9 @@ func (agent *Agent) Run(ctx context.Context, stream *streamv1.Stream) error {
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
+	conn = streams.ConnectionWithLog{Connection: conn}
 	defer func() {
-		_ = conn.Close()
+		_ = conn.Close(ctx)
 	}()
 
 	var inputWriter io.Writer
@@ -148,12 +149,12 @@ func (agent *Agent) Run(ctx context.Context, stream *streamv1.Stream) error {
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			sendErr = conn.Send(ExitCode(exitErr.ExitCode()).Raw())
+			sendErr = conn.Send(ctx, ExitCode(exitErr.ExitCode()).Raw())
 		} else {
-			sendErr = conn.Send(ExitCode(255).Raw())
+			sendErr = conn.Send(ctx, ExitCode(255).Raw())
 		}
 	} else {
-		sendErr = conn.Send(ExitCode(0).Raw())
+		sendErr = conn.Send(ctx, ExitCode(0).Raw())
 	}
 	if sendErr != nil {
 		logger.Error(sendErr, "send exit code error")
@@ -185,7 +186,7 @@ func (agent *Agent) handleConn(
 		default:
 		}
 
-		data, err := conn.Receive()
+		data, err := conn.Receive(ctx)
 		if err != nil {
 			select {
 			case <-ctx.Done():
@@ -268,7 +269,7 @@ func (agent *Agent) handleOutput(
 		} else {
 			msg = StdoutData(tmp[:n])
 		}
-		if err := conn.Send(msg.Raw()); err != nil {
+		if err := conn.Send(ctx, msg.Raw()); err != nil {
 			logger.Error(err, "send message to server error")
 		}
 	}

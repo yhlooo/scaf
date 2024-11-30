@@ -1,6 +1,7 @@
 package streams
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -33,7 +34,7 @@ func (conn *GRPCStreamClientConnection) Name() string {
 }
 
 // Send 发送
-func (conn *GRPCStreamClientConnection) Send(data []byte) error {
+func (conn *GRPCStreamClientConnection) Send(_ context.Context, data []byte) error {
 	if conn.closeErr != nil {
 		return conn.closeErr
 	}
@@ -50,7 +51,7 @@ func (conn *GRPCStreamClientConnection) Send(data []byte) error {
 }
 
 // Receive 接收
-func (conn *GRPCStreamClientConnection) Receive() ([]byte, error) {
+func (conn *GRPCStreamClientConnection) Receive(_ context.Context) ([]byte, error) {
 	if conn.closeErr != nil {
 		return nil, conn.closeErr
 	}
@@ -65,7 +66,7 @@ func (conn *GRPCStreamClientConnection) Receive() ([]byte, error) {
 }
 
 // Close 关闭连接
-func (conn *GRPCStreamClientConnection) Close() error {
+func (conn *GRPCStreamClientConnection) Close(_ context.Context) error {
 	conn.closeErr = ErrConnectionClosed
 	return conn.client.CloseSend()
 }
@@ -99,7 +100,7 @@ func (conn *GRPCStreamServerConnection) Name() string {
 }
 
 // Send 发送
-func (conn *GRPCStreamServerConnection) Send(data []byte) error {
+func (conn *GRPCStreamServerConnection) Send(_ context.Context, data []byte) error {
 	if conn.closeErr != nil {
 		return conn.closeErr
 	}
@@ -115,7 +116,7 @@ func (conn *GRPCStreamServerConnection) Send(data []byte) error {
 }
 
 // Receive 接收
-func (conn *GRPCStreamServerConnection) Receive() ([]byte, error) {
+func (conn *GRPCStreamServerConnection) Receive(_ context.Context) ([]byte, error) {
 	if conn.closeErr != nil {
 		return nil, conn.closeErr
 	}
@@ -134,7 +135,7 @@ func (conn *GRPCStreamServerConnection) Done() <-chan struct{} {
 }
 
 // Close 关闭连接
-func (conn *GRPCStreamServerConnection) Close() error {
+func (conn *GRPCStreamServerConnection) Close(_ context.Context) error {
 	conn.closeOnce.Do(func() {
 		conn.closeErr = ErrConnectionClosed
 		if conn.done != nil {

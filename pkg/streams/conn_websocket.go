@@ -1,6 +1,7 @@
 package streams
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/gorilla/websocket"
@@ -29,7 +30,7 @@ func (conn *WebSocketConnection) Name() string {
 }
 
 // Send 发送
-func (conn *WebSocketConnection) Send(data []byte) error {
+func (conn *WebSocketConnection) Send(_ context.Context, data []byte) error {
 	if conn.closeErr != nil {
 		return conn.closeErr
 	}
@@ -47,7 +48,7 @@ func (conn *WebSocketConnection) Send(data []byte) error {
 }
 
 // Receive 接收
-func (conn *WebSocketConnection) Receive() ([]byte, error) {
+func (conn *WebSocketConnection) Receive(_ context.Context) ([]byte, error) {
 	if conn.closeErr != nil {
 		return nil, conn.closeErr
 	}
@@ -65,7 +66,7 @@ func (conn *WebSocketConnection) Receive() ([]byte, error) {
 }
 
 // Close 关闭连接
-func (conn *WebSocketConnection) Close() error {
+func (conn *WebSocketConnection) Close(_ context.Context) error {
 	conn.closeErr = ErrConnectionClosed
 	return conn.conn.Close()
 }
