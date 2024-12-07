@@ -14,18 +14,18 @@ import (
 	"github.com/yhlooo/scaf/pkg/streams"
 )
 
+// StreamsServerOptions streams 服务选项
+type StreamsServerOptions struct {
+	TokenAuthenticator *auth.TokenAuthenticator
+	StreamManager      streams.Manager
+}
+
 // NewStreamsServer 创建 *StreamsServer
-func NewStreamsServer(opts Options) *StreamsServer {
+func NewStreamsServer(opts StreamsServerOptions) *StreamsServer {
 	return &StreamsServer{
 		streamMgr:     opts.StreamManager,
 		authenticator: opts.TokenAuthenticator,
 	}
-}
-
-// Options 服务选项
-type Options struct {
-	TokenAuthenticator *auth.TokenAuthenticator
-	StreamManager      streams.Manager
 }
 
 // StreamsServer 通用 streams 服务

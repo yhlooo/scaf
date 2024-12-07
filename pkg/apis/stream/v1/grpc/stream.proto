@@ -2,12 +2,12 @@ syntax = "proto3";
 
 package yhlooo.com.scaf.stream.v1;
 
-option go_package = "github.com/yhlooo/scaf/pkg/apis/stream/v1";
+option go_package = "github.com/yhlooo/scaf/pkg/apis/stream/v1/grpc";
 
 import "pkg/apis/meta/v1/grpc/meta.proto";
 import "pkg/apis/meta/v1/grpc/status.proto";
 
-// Streams 流管理和转发服务
+// 流管理和转发服务
 service Streams {
   rpc CreateStream(Stream) returns (Stream);
   rpc GetStream(GetStreamRequest) returns (Stream);

@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package yhlooo.com.scaf.authn.v1;
+
+option go_package = "github.com/yhlooo/scaf/pkg/apis/authn/v1/grpc";
+
+import "pkg/apis/meta/v1/grpc/meta.proto";
+
+// 认证服务
+service Authentication {
+  rpc CreateToken(TokenRequest) returns (TokenRequest);
+}
+
+// TokenRequest Token 请求
+message TokenRequest {
+  yhlooo.com.scaf.meta.v1.ObjectMeta metadata = 1;
+
+  TokenRequestStatus status = 2;
+}
+
+// TokenRequestStatus Token 请求状态
+message TokenRequestStatus {
+  string token = 1;
+}

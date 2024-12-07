@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 
 	"github.com/yhlooo/scaf/pkg/apierrors"
+	authnv1 "github.com/yhlooo/scaf/pkg/apis/authn/v1"
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 	"github.com/yhlooo/scaf/pkg/server/generic"
@@ -30,35 +30,40 @@ type Options struct {
 }
 
 // NewHTTPHandler 创建 HTTP 请求处理器
-func NewHTTPHandler(genericServer *generic.StreamsServer, opts Options) http.Handler {
+func NewHTTPHandler(
+	genericStreamsServer *generic.StreamsServer,
+	genericAuthnServer *generic.AuthenticationServer,
+	opts Options) http.Handler {
 	handlers := &httpHandlers{
-		logger:        opts.Logger,
-		genericServer: genericServer,
+		genericStreamsServer: genericStreamsServer,
+		genericAuthnServer:   genericAuthnServer,
 	}
 
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("POST /v1/streams", handlers.HandleCreateStream)
 	mux.HandleFunc("GET /v1/streams", handlers.HandleListStreams)
 	mux.HandleFunc("GET /v1/streams/{name}", handlers.HandleGetOrConnectStream)
 	mux.HandleFunc("DELETE /v1/streams/{name}", handlers.HandleDeleteStream)
-	return mux
+
+	mux.HandleFunc("POST /v1/tokens", handlers.HandleCreateToken)
+
+	return GetTokenHandler(WithLoggerHandler(mux, opts.Logger))
 }
 
 // httpHandlers HTTP 请求处理器
 type httpHandlers struct {
-	genericServer *generic.StreamsServer
-	logger        logr.Logger
+	genericStreamsServer *generic.StreamsServer
+	genericAuthnServer   *generic.AuthenticationServer
 }
 
 // HandleCreateStream 处理创建流
 func (h *httpHandlers) HandleCreateStream(w http.ResponseWriter, req *http.Request) {
-	ctx := h.newContext(req, "request", "CreateStream")
-	logger := logr.FromContextOrDiscard(ctx)
+	ctx := req.Context()
+	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "CreateStream")
+	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
-	defer func() {
-		_ = req.Body.Close()
-	}()
 	reqBody, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 	if err != nil {
 		logger.Error(err, "read request error")
@@ -72,7 +77,7 @@ func (h *httpHandlers) HandleCreateStream(w http.ResponseWriter, req *http.Reque
 		return
 	}
 
-	ret, err := h.genericServer.CreateStream(ctx, stream)
+	ret, err := h.genericStreamsServer.CreateStream(ctx, stream)
 	if err != nil {
 		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
@@ -82,11 +87,12 @@ func (h *httpHandlers) HandleCreateStream(w http.ResponseWriter, req *http.Reque
 
 // HandleListStreams 处理列出流
 func (h *httpHandlers) HandleListStreams(w http.ResponseWriter, req *http.Request) {
-	ctx := h.newContext(req, "request", "ListStreams")
-	logger := logr.FromContextOrDiscard(ctx)
+	ctx := req.Context()
+	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "ListStreams")
+	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
-	ret, err := h.genericServer.ListStreams(ctx)
+	ret, err := h.genericStreamsServer.ListStreams(ctx)
 	if err != nil {
 		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
@@ -97,11 +103,12 @@ func (h *httpHandlers) HandleListStreams(w http.ResponseWriter, req *http.Reques
 // HandleGetOrConnectStream 处理获取或连接流
 func (h *httpHandlers) HandleGetOrConnectStream(w http.ResponseWriter, req *http.Request) {
 	streamName := req.PathValue("name")
-	ctx := h.newContext(req, "request", "GetOrConnectStream", "stream", streamName)
-	logger := logr.FromContextOrDiscard(ctx)
+	ctx := req.Context()
+	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "GetOrConnectStream", "stream", streamName)
+	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
-	ins, err := h.genericServer.GetStreamInstance(ctx, streamName)
+	ins, err := h.genericStreamsServer.GetStreamInstance(ctx, streamName)
 	if err != nil {
 		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
@@ -151,11 +158,12 @@ func (h *httpHandlers) HandleGetOrConnectStream(w http.ResponseWriter, req *http
 // HandleDeleteStream 处理删除流
 func (h *httpHandlers) HandleDeleteStream(w http.ResponseWriter, req *http.Request) {
 	streamName := req.PathValue("name")
-	ctx := h.newContext(req, "request", "DeleteStream", "stream", streamName)
-	logger := logr.FromContextOrDiscard(ctx)
+	ctx := req.Context()
+	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "DeleteStream", "stream", streamName)
+	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
-	err := h.genericServer.DeleteStream(ctx, req.PathValue("name"))
+	err := h.genericStreamsServer.DeleteStream(ctx, req.PathValue("name"))
 	if err != nil {
 		responseStatus(ctx, w, apierrors.NewFromError(err))
 		return
@@ -163,22 +171,31 @@ func (h *httpHandlers) HandleDeleteStream(w http.ResponseWriter, req *http.Reque
 	responseStatus(ctx, w, newOKStatus())
 }
 
-// newContext 创建请求上下文
-func (h *httpHandlers) newContext(req *http.Request, keyValues ...any) context.Context {
+func (h *httpHandlers) HandleCreateToken(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "CreateToken")
+	ctx = logr.NewContext(ctx, logger)
+	logger.Info("request received")
 
-	// 注入 logger
-	keyValues = append(keyValues, "reqID", uuid.New().String())
-	ctx = logr.NewContext(ctx, h.logger.WithValues(keyValues...))
-
-	// 注入 token
-	token := req.Header.Get("Authorization")
-	if token != "" && strings.HasPrefix(strings.ToLower(token), "bearer ") {
-		token = token[7:]
-		ctx = generic.NewContextWithToken(ctx, token)
+	reqBody, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
+	if err != nil {
+		logger.Error(err, "read request error")
+		responseStatus(ctx, w, apierrors.NewInternalServerError(fmt.Errorf("read request error: %w", err)))
+		return
+	}
+	tokenReq := &authnv1.TokenRequest{}
+	if err := json.Unmarshal(reqBody, tokenReq); err != nil {
+		logger.Error(err, "unmarshal request error")
+		responseStatus(ctx, w, apierrors.NewBadRequestError(fmt.Errorf("parse request error: %w", err)))
+		return
 	}
 
-	return ctx
+	ret, err := h.genericAuthnServer.CreateToken(ctx, tokenReq)
+	if err != nil {
+		responseStatus(ctx, w, apierrors.NewFromError(err))
+		return
+	}
+	responseJSON(ctx, w, http.StatusCreated, ret)
 }
 
 // newOKStatus 创建普通正常状态

@@ -10,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 
+	authnv1grpc "github.com/yhlooo/scaf/pkg/apis/authn/v1/grpc"
 	streamv1grpc "github.com/yhlooo/scaf/pkg/apis/stream/v1/grpc"
 	"github.com/yhlooo/scaf/pkg/auth"
 	"github.com/yhlooo/scaf/pkg/server/generic"
@@ -49,15 +50,19 @@ func NewServer(opts Options) *Server {
 	opts.Complete()
 	authenticator := auth.NewTokenAuthenticator(opts.TokenAuthenticator)
 	streamMgr := streams.NewInMemoryManager()
-	genericServer := generic.NewStreamsServer(generic.Options{
+	genericStreamsServer := generic.NewStreamsServer(generic.StreamsServerOptions{
 		TokenAuthenticator: authenticator,
 		StreamManager:      streamMgr,
 	})
+	genericAuthnServer := generic.NewAuthenticationServer(generic.AuthenticationServerOptions{
+		TokenAuthenticator: authenticator,
+	})
 	return &Server{
-		opts:          opts,
-		authenticator: authenticator,
-		streamMgr:     streamMgr,
-		genericServer: genericServer,
+		opts:                 opts,
+		authenticator:        authenticator,
+		streamMgr:            streamMgr,
+		genericStreamsServer: genericStreamsServer,
+		genericAuthnServer:   genericAuthnServer,
 	}
 }
 
@@ -76,10 +81,12 @@ type Server struct {
 	grpcListener      net.Listener
 	grpcServer        *grpc.Server
 	grpcStreamsServer *servergrpc.StreamsServer
+	grpcAuthnServer   *servergrpc.AuthenticationServer
 
-	authenticator *auth.TokenAuthenticator
-	streamMgr     streams.Manager
-	genericServer *generic.StreamsServer
+	authenticator        *auth.TokenAuthenticator
+	streamMgr            streams.Manager
+	genericStreamsServer *generic.StreamsServer
+	genericAuthnServer   *generic.AuthenticationServer
 }
 
 // Start 启动服务
@@ -100,19 +107,32 @@ func (s *Server) Start(ctx context.Context) error {
 		if err != nil {
 			return
 		}
-		s.httpHandler = serverhttp.NewHTTPHandler(s.genericServer, serverhttp.Options{
-			Logger: logger.WithName("http"),
-		})
+		s.httpHandler = serverhttp.NewHTTPHandler(
+			s.genericStreamsServer,
+			s.genericAuthnServer,
+			serverhttp.Options{
+				Logger: logger.WithName("http"),
+			},
+		)
 
 		s.grpcListener, err = net.Listen("tcp", s.opts.GRPCAddr)
 		if err != nil {
 			return
 		}
-		s.grpcServer = grpc.NewServer()
-		s.grpcStreamsServer = servergrpc.NewStreamsServer(s.genericServer, servergrpc.Options{
-			Logger: logger.WithName("grpc"),
-		})
+		s.grpcServer = grpc.NewServer(
+			grpc.ChainUnaryInterceptor(
+				servergrpc.GetTokenInterceptor,
+				servergrpc.WithLoggerInterceptor(logger.WithName("grpc")),
+			),
+			grpc.ChainStreamInterceptor(
+				servergrpc.GetTokenStreamInterceptor,
+				servergrpc.WithLoggerStreamInterceptor(logger.WithName("grpc")),
+			),
+		)
+		s.grpcStreamsServer = servergrpc.NewStreamsServer(s.genericStreamsServer)
 		streamv1grpc.RegisterStreamsServer(s.grpcServer, s.grpcStreamsServer)
+		s.grpcAuthnServer = servergrpc.NewAuthenticationServer(s.genericAuthnServer)
+		authnv1grpc.RegisterAuthenticationServer(s.grpcServer, s.grpcAuthnServer)
 
 		go s.run(ctx)
 	})
