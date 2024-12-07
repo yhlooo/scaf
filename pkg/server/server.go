@@ -50,19 +50,19 @@ func NewServer(opts Options) *Server {
 	opts.Complete()
 	authenticator := auth.NewTokenAuthenticator(opts.TokenAuthenticator)
 	streamMgr := streams.NewInMemoryManager()
+	genericAuthnServer := generic.NewAuthenticationServer(generic.AuthenticationServerOptions{
+		TokenAuthenticator: authenticator,
+	})
 	genericStreamsServer := generic.NewStreamsServer(generic.StreamsServerOptions{
 		TokenAuthenticator: authenticator,
 		StreamManager:      streamMgr,
-	})
-	genericAuthnServer := generic.NewAuthenticationServer(generic.AuthenticationServerOptions{
-		TokenAuthenticator: authenticator,
 	})
 	return &Server{
 		opts:                 opts,
 		authenticator:        authenticator,
 		streamMgr:            streamMgr,
-		genericStreamsServer: genericStreamsServer,
 		genericAuthnServer:   genericAuthnServer,
+		genericStreamsServer: genericStreamsServer,
 	}
 }
 
@@ -80,8 +80,8 @@ type Server struct {
 
 	grpcListener      net.Listener
 	grpcServer        *grpc.Server
-	grpcStreamsServer *servergrpc.StreamsServer
 	grpcAuthnServer   *servergrpc.AuthenticationServer
+	grpcStreamsServer *servergrpc.StreamsServer
 
 	authenticator        *auth.TokenAuthenticator
 	streamMgr            streams.Manager
@@ -108,8 +108,8 @@ func (s *Server) Start(ctx context.Context) error {
 			return
 		}
 		s.httpHandler = serverhttp.NewHTTPHandler(
-			s.genericStreamsServer,
 			s.genericAuthnServer,
+			s.genericStreamsServer,
 			serverhttp.Options{
 				Logger: logger.WithName("http"),
 			},
@@ -129,10 +129,10 @@ func (s *Server) Start(ctx context.Context) error {
 				servergrpc.WithLoggerStreamInterceptor(logger.WithName("grpc")),
 			),
 		)
-		s.grpcStreamsServer = servergrpc.NewStreamsServer(s.genericStreamsServer)
-		streamv1grpc.RegisterStreamsServer(s.grpcServer, s.grpcStreamsServer)
 		s.grpcAuthnServer = servergrpc.NewAuthenticationServer(s.genericAuthnServer)
 		authnv1grpc.RegisterAuthenticationServer(s.grpcServer, s.grpcAuthnServer)
+		s.grpcStreamsServer = servergrpc.NewStreamsServer(s.genericStreamsServer)
+		streamv1grpc.RegisterStreamsServer(s.grpcServer, s.grpcStreamsServer)
 
 		go s.run(ctx)
 	})

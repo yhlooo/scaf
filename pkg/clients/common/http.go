@@ -10,8 +10,10 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/gorilla/websocket"
 
+	authnv1 "github.com/yhlooo/scaf/pkg/apis/authn/v1"
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 	serverhttp "github.com/yhlooo/scaf/pkg/server/http"
@@ -74,6 +76,11 @@ type httpClient struct {
 
 var _ Client = (*httpClient)(nil)
 
+// Token 返回当前客户端使用的 Token
+func (c *httpClient) Token() string {
+	return c.opts.Token
+}
+
 // WithToken 返回使用指定 Token 的客户端
 func (c *httpClient) WithToken(token string) Client {
 	opts := c.opts
@@ -83,6 +90,40 @@ func (c *httpClient) WithToken(token string) Client {
 		httpClient: c.httpClient,
 		wsDialer:   c.wsDialer,
 	}
+}
+
+// Login 登陆获取用户身份返回登陆后的客户端
+func (c *httpClient) Login(ctx context.Context, opts LoginOptions) (Client, error) {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	if !opts.RenewUser {
+		if ret, err := c.CreateSelfSubjectReview(ctx, &authnv1.SelfSubjectReview{}); err == nil {
+			// 已经登陆
+			logger.Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
+			return c, nil
+		}
+	}
+	ret := &authnv1.TokenRequest{}
+	err := c.request(ctx, http.MethodPost, "/v1/tokens", &authnv1.TokenRequest{}, ret)
+	if err != nil {
+		return nil, err
+	}
+
+	logger.Info(fmt.Sprintf("login as %q", ret.Name))
+	return c.WithToken(ret.Status.Token), nil
+}
+
+// CreateSelfSubjectReview 检查自身身份
+func (c *httpClient) CreateSelfSubjectReview(
+	ctx context.Context,
+	review *authnv1.SelfSubjectReview,
+) (*authnv1.SelfSubjectReview, error) {
+	ret := &authnv1.SelfSubjectReview{}
+	err := c.request(ctx, http.MethodPost, "/v1/selfsubjectreviews", review, ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
 }
 
 // CreateStream 创建流

@@ -9,6 +9,7 @@ import "pkg/apis/meta/v1/grpc/meta.proto";
 // 认证服务
 service Authentication {
   rpc CreateToken(TokenRequest) returns (TokenRequest);
+  rpc CreateSelfSubjectReview(SelfSubjectReview) returns (SelfSubjectReview);
 }
 
 // TokenRequest Token 请求
@@ -21,4 +22,21 @@ message TokenRequest {
 // TokenRequestStatus Token 请求状态
 message TokenRequestStatus {
   string token = 1;
+}
+
+// SelfSubjectReview 检查自身身份
+message SelfSubjectReview {
+  yhlooo.com.scaf.meta.v1.ObjectMeta metadata = 1;
+
+    SelfSubjectReviewStatus status = 2;
+}
+
+// SelfSubjectReviewStatus 检查自身身份状态
+message SelfSubjectReviewStatus {
+  UserInfo user_info = 1;
+}
+
+// UserInfo 用户信息
+message UserInfo {
+  string username = 1;
 }

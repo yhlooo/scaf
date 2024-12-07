@@ -30,10 +30,23 @@ func (s *AuthenticationServer) CreateToken(
 	ctx context.Context,
 	req *authnv1grpc.TokenRequest,
 ) (*authnv1grpc.TokenRequest, error) {
-	logger := logr.FromContextOrDiscard(ctx).WithValues("request", "CreateToken")
+	logger := logr.FromContextOrDiscard(ctx)
 	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
 	ret, err := s.genericServer.CreateToken(ctx, authnv1.NewTokenRequestFromGRPC(req))
 	return authnv1.NewGRPCTokenRequest(ret), err
+}
+
+// CreateSelfSubjectReview 检查自身身份
+func (s *AuthenticationServer) CreateSelfSubjectReview(
+	ctx context.Context,
+	review *authnv1grpc.SelfSubjectReview,
+) (*authnv1grpc.SelfSubjectReview, error) {
+	logger := logr.FromContextOrDiscard(ctx)
+	ctx = logr.NewContext(ctx, logger)
+	logger.Info("request received")
+
+	ret, err := s.genericServer.CreateSelfSubjectReview(ctx, authnv1.NewSelfSubjectReviewFromGRPC(review))
+	return authnv1.NewGRPCSelfSubjectReview(ret), err
 }

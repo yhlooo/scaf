@@ -31,30 +31,87 @@ type Options struct {
 
 // NewHTTPHandler 创建 HTTP 请求处理器
 func NewHTTPHandler(
-	genericStreamsServer *generic.StreamsServer,
 	genericAuthnServer *generic.AuthenticationServer,
+	genericStreamsServer *generic.StreamsServer,
 	opts Options) http.Handler {
 	handlers := &httpHandlers{
-		genericStreamsServer: genericStreamsServer,
 		genericAuthnServer:   genericAuthnServer,
+		genericStreamsServer: genericStreamsServer,
 	}
 
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("POST /v1/tokens", handlers.HandleCreateToken)
+	mux.HandleFunc("POST /v1/selfsubjectreviews", handlers.HandleCreateSelfSubjectReview)
+	
 	mux.HandleFunc("POST /v1/streams", handlers.HandleCreateStream)
 	mux.HandleFunc("GET /v1/streams", handlers.HandleListStreams)
 	mux.HandleFunc("GET /v1/streams/{name}", handlers.HandleGetOrConnectStream)
 	mux.HandleFunc("DELETE /v1/streams/{name}", handlers.HandleDeleteStream)
-
-	mux.HandleFunc("POST /v1/tokens", handlers.HandleCreateToken)
 
 	return GetTokenHandler(WithLoggerHandler(mux, opts.Logger))
 }
 
 // httpHandlers HTTP 请求处理器
 type httpHandlers struct {
-	genericStreamsServer *generic.StreamsServer
 	genericAuthnServer   *generic.AuthenticationServer
+	genericStreamsServer *generic.StreamsServer
+}
+
+// HandleCreateSelfSubjectReview 处理检查自身身份
+func (h *httpHandlers) HandleCreateSelfSubjectReview(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "CreateSelfSubjectReview")
+	ctx = logr.NewContext(ctx, logger)
+	logger.Info("request received")
+
+	reqBody, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
+	if err != nil {
+		logger.Error(err, "read request error")
+		responseStatus(ctx, w, apierrors.NewInternalServerError(fmt.Errorf("read request error: %w", err)))
+		return
+	}
+	review := &authnv1.SelfSubjectReview{}
+	if err := json.Unmarshal(reqBody, review); err != nil {
+		logger.Error(err, "unmarshal request error")
+		responseStatus(ctx, w, apierrors.NewBadRequestError(fmt.Errorf("parse request error: %w", err)))
+		return
+	}
+
+	ret, err := h.genericAuthnServer.CreateSelfSubjectReview(ctx, review)
+	if err != nil {
+		responseStatus(ctx, w, apierrors.NewFromError(err))
+		return
+	}
+	responseJSON(ctx, w, http.StatusCreated, ret)
+}
+
+// HandleCreateToken 处理创建 Token
+func (h *httpHandlers) HandleCreateToken(w http.ResponseWriter, req *http.Request) {
+	ctx := req.Context()
+	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "CreateToken")
+	ctx = logr.NewContext(ctx, logger)
+	logger.Info("request received")
+
+	reqBody, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
+	if err != nil {
+		logger.Error(err, "read request error")
+		responseStatus(ctx, w, apierrors.NewInternalServerError(fmt.Errorf("read request error: %w", err)))
+		return
+	}
+	tokenReq := &authnv1.TokenRequest{}
+	if err := json.Unmarshal(reqBody, tokenReq); err != nil {
+		logger.Error(err, "unmarshal request error")
+		responseStatus(ctx, w, apierrors.NewBadRequestError(fmt.Errorf("parse request error: %w", err)))
+		return
+	}
+
+	ret, err := h.genericAuthnServer.CreateToken(ctx, tokenReq)
+	if err != nil {
+		responseStatus(ctx, w, apierrors.NewFromError(err))
+		return
+	}
+	responseJSON(ctx, w, http.StatusCreated, ret)
 }
 
 // HandleCreateStream 处理创建流
@@ -169,33 +226,6 @@ func (h *httpHandlers) HandleDeleteStream(w http.ResponseWriter, req *http.Reque
 		return
 	}
 	responseStatus(ctx, w, newOKStatus())
-}
-
-func (h *httpHandlers) HandleCreateToken(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	logger := logr.FromContextOrDiscard(ctx).WithValues("method", "CreateToken")
-	ctx = logr.NewContext(ctx, logger)
-	logger.Info("request received")
-
-	reqBody, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
-	if err != nil {
-		logger.Error(err, "read request error")
-		responseStatus(ctx, w, apierrors.NewInternalServerError(fmt.Errorf("read request error: %w", err)))
-		return
-	}
-	tokenReq := &authnv1.TokenRequest{}
-	if err := json.Unmarshal(reqBody, tokenReq); err != nil {
-		logger.Error(err, "unmarshal request error")
-		responseStatus(ctx, w, apierrors.NewBadRequestError(fmt.Errorf("parse request error: %w", err)))
-		return
-	}
-
-	ret, err := h.genericAuthnServer.CreateToken(ctx, tokenReq)
-	if err != nil {
-		responseStatus(ctx, w, apierrors.NewFromError(err))
-		return
-	}
-	responseJSON(ctx, w, http.StatusCreated, ret)
 }
 
 // newOKStatus 创建普通正常状态

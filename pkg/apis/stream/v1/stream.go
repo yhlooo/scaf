@@ -50,12 +50,12 @@ func NewStreamFromGRPC(in *streamv1grpc.Stream) *Stream {
 	if in == nil {
 		return nil
 	}
+	meta := metav1.NewObjectMetaFromGRPC(in.GetMetadata())
+	if meta == nil {
+		meta = &metav1.ObjectMeta{}
+	}
 	return &Stream{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        in.GetMetadata().GetName(),
-			UID:         metav1.UID(in.GetMetadata().GetUid()),
-			Annotations: in.GetMetadata().GetAnnotations(),
-		},
+		ObjectMeta: *meta,
 		Spec: StreamSpec{
 			StopPolicy: StreamStopPolicy(in.GetSpec().GetStopPolicy()),
 		},
@@ -71,11 +71,7 @@ func NewGRPCStream(in *Stream) *streamv1grpc.Stream {
 		return nil
 	}
 	return &streamv1grpc.Stream{
-		Metadata: &metav1grpc.ObjectMeta{
-			Name:        in.Name,
-			Uid:         string(in.UID),
-			Annotations: in.Annotations,
-		},
+		Metadata: metav1.NewGRPCObjectMeta(&in.ObjectMeta),
 		Spec: &streamv1grpc.StreamSpec{
 			StopPolicy: string(in.Spec.StopPolicy),
 		},

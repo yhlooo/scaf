@@ -27,7 +27,6 @@ func WithLoggerHandler(handler http.Handler, logger logr.Logger) http.HandlerFun
 	return func(w http.ResponseWriter, req *http.Request) {
 		req = req.WithContext(logr.NewContext(req.Context(), logger.WithValues(
 			"reqID", randutil.LowerAlphaNumeric(8),
-			"request", req.Method+" "+req.RequestURI,
 		)))
 		handler.ServeHTTP(w, req)
 	}

@@ -34,12 +34,18 @@ func (ins *StreamInstance) Clone() *StreamInstance {
 			annotations[k] = v
 		}
 	}
+	var owners []string
+	if ins.Object.Owners != nil {
+		owners = make([]string, len(ins.Object.Owners))
+		copy(owners, ins.Object.Owners)
+	}
 	return &StreamInstance{
 		Object: streamv1.Stream{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        ins.Object.ObjectMeta.Name,
 				UID:         ins.Object.ObjectMeta.UID,
 				Annotations: annotations,
+				Owners:      owners,
 			},
 			Spec: streamv1.StreamSpec{
 				StopPolicy: ins.Object.Spec.StopPolicy,

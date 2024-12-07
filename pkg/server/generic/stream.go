@@ -38,6 +38,15 @@ type StreamsServer struct {
 func (s *StreamsServer) CreateStream(ctx context.Context, stream *streamv1.Stream) (*streamv1.Stream, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
+	username, err := GetUsernameFromContext(ctx, s.authenticator)
+	if err != nil {
+		logger.Error(err, "get username error")
+		return nil, apierrors.NewUnauthorizedError(err)
+	}
+	if !auth.IsAnonymous(username) && !auth.IsOwner(username, &stream.ObjectMeta) {
+		stream.Owners = append(stream.Owners, username)
+	}
+
 	// 创建流
 	strm := streams.NewBufferedStream()
 	ins, err := s.streamMgr.CreateStream(ctx, &streams.StreamInstance{
@@ -73,12 +82,12 @@ func (s *StreamsServer) GetStream(ctx context.Context, name string) (*streamv1.S
 func (s *StreamsServer) GetStreamInstance(ctx context.Context, name string) (*streams.StreamInstance, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	username, err := s.getUsername(ctx)
+	username, err := GetUsernameFromContext(ctx, s.authenticator)
 	if err != nil {
 		logger.Error(err, "get username error")
 		return nil, apierrors.NewUnauthorizedError(err)
 	}
-	if !auth.IsAdmin(username) && !auth.IsStream(username, name) {
+	if auth.IsAnonymous(username) {
 		err := fmt.Errorf("user %q is not allowed to get stream %q", username, name)
 		logger.Info(err.Error())
 		return nil, apierrors.NewForbiddenError(err)
@@ -96,6 +105,12 @@ func (s *StreamsServer) GetStreamInstance(ctx context.Context, name string) (*st
 		}
 	}
 
+	if !auth.IsStream(username, name) && !auth.IsOwner(username, &ins.Object.ObjectMeta) && !auth.IsAdmin(username) {
+		err := fmt.Errorf("user %q is not allowed to get stream %q", username, name)
+		logger.Info(err.Error())
+		return nil, apierrors.NewForbiddenError(err)
+	}
+
 	return ins, nil
 }
 
@@ -103,12 +118,12 @@ func (s *StreamsServer) GetStreamInstance(ctx context.Context, name string) (*st
 func (s *StreamsServer) ListStreams(ctx context.Context) (*streamv1.StreamList, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	username, err := s.getUsername(ctx)
+	username, err := GetUsernameFromContext(ctx, s.authenticator)
 	if err != nil {
 		logger.Error(err, "get username error")
 		return nil, apierrors.NewUnauthorizedError(err)
 	}
-	if !auth.IsAdmin(username) {
+	if auth.IsAnonymous(username) || auth.IsStreams(username) {
 		err := fmt.Errorf("user %q is not allowed to list streams", username)
 		logger.Info(err.Error())
 		return nil, apierrors.NewForbiddenError(err)
@@ -122,7 +137,9 @@ func (s *StreamsServer) ListStreams(ctx context.Context) (*streamv1.StreamList, 
 
 	ret := &streamv1.StreamList{}
 	for _, ins := range streamList {
-		ret.Items = append(ret.Items, ins.Object)
+		if auth.IsOwner(username, &ins.Object.ObjectMeta) || auth.IsAdmin(username) {
+			ret.Items = append(ret.Items, ins.Object)
+		}
 	}
 
 	return ret, nil
@@ -132,15 +149,32 @@ func (s *StreamsServer) ListStreams(ctx context.Context) (*streamv1.StreamList, 
 func (s *StreamsServer) DeleteStream(ctx context.Context, name string) error {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	username, err := s.getUsername(ctx)
+	username, err := GetUsernameFromContext(ctx, s.authenticator)
 	if err != nil {
 		logger.Error(err, "get username error")
 		return apierrors.NewUnauthorizedError(err)
 	}
-	if !auth.IsAdmin(username) && !auth.IsStream(username, name) {
+	if auth.IsAnonymous(username) {
 		err := fmt.Errorf("user %q is not allowed to delete stream %q", username, name)
 		logger.Info(err.Error())
 		return apierrors.NewForbiddenError(err)
+	}
+	if !auth.IsAdmin(username) && !auth.IsStream(username, name) {
+		ins, err := s.streamMgr.GetStream(ctx, metav1.UID(name))
+		if err != nil {
+			logger.Error(err, "get stream error")
+			switch {
+			case errors.Is(err, streams.ErrStreamNotFound):
+				return apierrors.NewNotFoundError(err)
+			default:
+				return apierrors.NewInternalServerError(err)
+			}
+		}
+		if !auth.IsOwner(username, &ins.Object.ObjectMeta) {
+			err := fmt.Errorf("user %q is not allowed to delete stream %q", username, name)
+			logger.Info(err.Error())
+			return apierrors.NewForbiddenError(err)
+		}
 	}
 
 	if err := s.streamMgr.DeleteStream(ctx, metav1.UID(name)); err != nil {
@@ -154,13 +188,4 @@ func (s *StreamsServer) DeleteStream(ctx context.Context, name string) error {
 	}
 
 	return nil
-}
-
-// getUsername 获取请求用户名
-func (s *StreamsServer) getUsername(ctx context.Context) (string, error) {
-	token, ok := TokenFromContext(ctx)
-	if !ok || token == "" {
-		return auth.AnonymousUsername, nil
-	}
-	return s.authenticator.AuthenticateToken(token)
 }

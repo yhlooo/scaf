@@ -32,7 +32,7 @@ var _ streamv1grpc.StreamsServer = (*StreamsServer)(nil)
 
 // CreateStream 创建流
 func (s *StreamsServer) CreateStream(ctx context.Context, stream *streamv1grpc.Stream) (*streamv1grpc.Stream, error) {
-	logger := logr.FromContextOrDiscard(ctx).WithValues("request", "CreateStream")
+	logger := logr.FromContextOrDiscard(ctx)
 	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
@@ -45,7 +45,7 @@ func (s *StreamsServer) GetStream(
 	ctx context.Context,
 	req *streamv1grpc.GetStreamRequest,
 ) (*streamv1grpc.Stream, error) {
-	logger := logr.FromContextOrDiscard(ctx).WithValues("request", "GetStream", "stream", req.GetName())
+	logger := logr.FromContextOrDiscard(ctx).WithValues("stream", req.GetName())
 	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
@@ -71,7 +71,7 @@ func (s *StreamsServer) DeleteStream(
 	ctx context.Context,
 	req *streamv1grpc.DeleteStreamRequest,
 ) (*metav1grpc.Status, error) {
-	logger := logr.FromContextOrDiscard(ctx).WithValues("request", "DeleteStream", "stream", req.GetName())
+	logger := logr.FromContextOrDiscard(ctx).WithValues("stream", req.GetName())
 	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 
@@ -91,7 +91,7 @@ func (s *StreamsServer) ConnectStream(server streamv1grpc.Streams_ConnectStreamS
 		streamName = values[0]
 	}
 
-	logger := logr.FromContextOrDiscard(ctx).WithValues("request", "ConnectStream", "stream", streamName)
+	logger := logr.FromContextOrDiscard(ctx).WithValues("stream", streamName)
 	ctx = logr.NewContext(ctx, logger)
 	logger.Info("request received")
 

@@ -2,12 +2,16 @@ package common
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/yhlooo/scaf/pkg/apierrors"
+	authnv1 "github.com/yhlooo/scaf/pkg/apis/authn/v1"
+	authnv1grpc "github.com/yhlooo/scaf/pkg/apis/authn/v1/grpc"
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
 	streamv1grpc "github.com/yhlooo/scaf/pkg/apis/stream/v1/grpc"
 	servergrpc "github.com/yhlooo/scaf/pkg/server/grpc"
@@ -41,31 +45,72 @@ func NewGRPCClient(opts GRPCClientOptions) (Client, error) {
 		return nil, err
 	}
 	return &grpcClient{
-		client: streamv1grpc.NewStreamsClient(conn),
-		token:  opts.Token,
+		authnClient:   authnv1grpc.NewAuthenticationClient(conn),
+		streamsClient: streamv1grpc.NewStreamsClient(conn),
+		token:         opts.Token,
 	}, nil
 }
 
 // grpcClient 基于 gRPC 的客户端
 type grpcClient struct {
-	client streamv1grpc.StreamsClient
-	token  string
+	authnClient   authnv1grpc.AuthenticationClient
+	streamsClient streamv1grpc.StreamsClient
+	token         string
 }
 
 var _ Client = (*grpcClient)(nil)
 
+// Token 返回当前客户端使用的 Token
+func (c *grpcClient) Token() string {
+	return c.token
+}
+
 // WithToken 返回使用指定 Token 的客户端
 func (c *grpcClient) WithToken(token string) Client {
 	return &grpcClient{
-		client: c.client,
-		token:  token,
+		authnClient:   c.authnClient,
+		streamsClient: c.streamsClient,
+		token:         token,
 	}
+}
+
+// Login 登陆获取用户身份返回登陆后的客户端
+func (c *grpcClient) Login(ctx context.Context, opts LoginOptions) (Client, error) {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	if !opts.RenewUser {
+		if ret, err := c.CreateSelfSubjectReview(ctx, &authnv1.SelfSubjectReview{}); err == nil {
+			// 已经登陆
+			logger.Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
+			return c, nil
+		}
+	}
+	ret, err := c.authnClient.CreateToken(ctx, &authnv1grpc.TokenRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("create token error: %w", err)
+	}
+
+	logger.Info(fmt.Sprintf("login as %q", ret.GetMetadata().GetName()))
+	return c.WithToken(ret.GetStatus().GetToken()), nil
+}
+
+// CreateSelfSubjectReview 检查自身身份
+func (c *grpcClient) CreateSelfSubjectReview(
+	ctx context.Context,
+	review *authnv1.SelfSubjectReview,
+) (*authnv1.SelfSubjectReview, error) {
+	ctx = c.newContext(ctx)
+	ret, err := c.authnClient.CreateSelfSubjectReview(ctx, authnv1.NewGRPCSelfSubjectReview(review))
+	if err != nil {
+		return nil, apierrors.NewFromError(err)
+	}
+	return authnv1.NewSelfSubjectReviewFromGRPC(ret), nil
 }
 
 // CreateStream 创建流
 func (c *grpcClient) CreateStream(ctx context.Context, stream *streamv1.Stream) (*streamv1.Stream, error) {
 	ctx = c.newContext(ctx)
-	ret, err := c.client.CreateStream(ctx, streamv1.NewGRPCStream(stream))
+	ret, err := c.streamsClient.CreateStream(ctx, streamv1.NewGRPCStream(stream))
 	if err != nil {
 		return nil, apierrors.NewFromError(err)
 	}
@@ -75,7 +120,7 @@ func (c *grpcClient) CreateStream(ctx context.Context, stream *streamv1.Stream) 
 // GetStream 获取流
 func (c *grpcClient) GetStream(ctx context.Context, name string) (*streamv1.Stream, error) {
 	ctx = c.newContext(ctx)
-	ret, err := c.client.GetStream(ctx, &streamv1grpc.GetStreamRequest{Name: name})
+	ret, err := c.streamsClient.GetStream(ctx, &streamv1grpc.GetStreamRequest{Name: name})
 	if err != nil {
 		return nil, apierrors.NewFromError(err)
 	}
@@ -85,7 +130,7 @@ func (c *grpcClient) GetStream(ctx context.Context, name string) (*streamv1.Stre
 // ListStreams 列出流
 func (c *grpcClient) ListStreams(ctx context.Context) (*streamv1.StreamList, error) {
 	ctx = c.newContext(ctx)
-	ret, err := c.client.ListStreams(ctx, &streamv1grpc.ListStreamsRequest{})
+	ret, err := c.streamsClient.ListStreams(ctx, &streamv1grpc.ListStreamsRequest{})
 	if err != nil {
 		return nil, apierrors.NewFromError(err)
 	}
@@ -95,7 +140,7 @@ func (c *grpcClient) ListStreams(ctx context.Context) (*streamv1.StreamList, err
 // DeleteStream 删除流
 func (c *grpcClient) DeleteStream(ctx context.Context, name string) error {
 	ctx = c.newContext(ctx)
-	_, err := c.client.DeleteStream(ctx, &streamv1grpc.DeleteStreamRequest{Name: name})
+	_, err := c.streamsClient.DeleteStream(ctx, &streamv1grpc.DeleteStreamRequest{Name: name})
 	if err != nil {
 		return apierrors.NewFromError(err)
 	}
@@ -113,7 +158,7 @@ func (c *grpcClient) ConnectStream(
 		servergrpc.MetadataKeyStreamName, name,
 		servergrpc.MetadataKeyConnectionName, opts.ConnectionName,
 	)
-	streamClient, err := c.client.ConnectStream(ctx)
+	streamClient, err := c.streamsClient.ConnectStream(ctx)
 	if err != nil {
 		return nil, apierrors.NewFromError(err)
 	}

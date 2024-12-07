@@ -12,6 +12,8 @@ message ObjectMeta {
   string uid = 2;
   // 注解
   map<string,string> annotations = 3;
+  // 对象所有者用户名列表
+  repeated string owners = 4;
 }
 
 // ListMeta 列表对象元信息

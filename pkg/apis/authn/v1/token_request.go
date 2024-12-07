@@ -3,7 +3,6 @@ package v1
 import (
 	authnv1grpc "github.com/yhlooo/scaf/pkg/apis/authn/v1/grpc"
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
-	metav1grpc "github.com/yhlooo/scaf/pkg/apis/meta/v1/grpc"
 )
 
 // TokenRequest Token 请求
@@ -23,12 +22,12 @@ func NewTokenRequestFromGRPC(in *authnv1grpc.TokenRequest) *TokenRequest {
 	if in == nil {
 		return nil
 	}
+	meta := metav1.NewObjectMetaFromGRPC(in.GetMetadata())
+	if meta == nil {
+		meta = &metav1.ObjectMeta{}
+	}
 	return &TokenRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        in.GetMetadata().GetName(),
-			UID:         metav1.UID(in.GetMetadata().GetUid()),
-			Annotations: in.GetMetadata().GetAnnotations(),
-		},
+		ObjectMeta: *meta,
 		Status: TokenRequestStatus{
 			Token: in.GetStatus().GetToken(),
 		},
@@ -41,11 +40,7 @@ func NewGRPCTokenRequest(in *TokenRequest) *authnv1grpc.TokenRequest {
 		return nil
 	}
 	return &authnv1grpc.TokenRequest{
-		Metadata: &metav1grpc.ObjectMeta{
-			Name:        in.Name,
-			Uid:         string(in.UID),
-			Annotations: in.Annotations,
-		},
+		Metadata: metav1.NewGRPCObjectMeta(&in.ObjectMeta),
 		Status: &authnv1grpc.TokenRequestStatus{
 			Token: in.Status.Token,
 		},

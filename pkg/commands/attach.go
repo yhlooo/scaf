@@ -25,6 +25,12 @@ func NewAttachCommandWithOptions(opts *options.AttachOptions) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
 			}
+			if !opts.NoLogin {
+				client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
+				if err != nil {
+					return fmt.Errorf("login error: %w", err)
+				}
+			}
 			term := clientsexec.NewTerminal(client)
 
 			// 获取流

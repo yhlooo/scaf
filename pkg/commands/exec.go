@@ -32,6 +32,12 @@ scaf exec -s SERVER --stream STREAM --token TOKEN`,
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
 			}
+			if !opts.NoLogin {
+				client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
+				if err != nil {
+					return fmt.Errorf("login error: %w", err)
+				}
+			}
 			agent := clientsexec.NewAgent(client)
 
 			var stream *streamv1.Stream

@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v5.29.1
-// source: pkg/apis/authn/v1/grpc/token_request.proto
+// source: pkg/apis/authn/v1/grpc/authn.proto
 
 package grpc
 
@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Authentication_CreateToken_FullMethodName = "/yhlooo.com.scaf.authn.v1.Authentication/CreateToken"
+	Authentication_CreateToken_FullMethodName             = "/yhlooo.com.scaf.authn.v1.Authentication/CreateToken"
+	Authentication_CreateSelfSubjectReview_FullMethodName = "/yhlooo.com.scaf.authn.v1.Authentication/CreateSelfSubjectReview"
 )
 
 // AuthenticationClient is the client API for Authentication service.
@@ -29,6 +30,7 @@ const (
 // 认证服务
 type AuthenticationClient interface {
 	CreateToken(ctx context.Context, in *TokenRequest, opts ...grpc.CallOption) (*TokenRequest, error)
+	CreateSelfSubjectReview(ctx context.Context, in *SelfSubjectReview, opts ...grpc.CallOption) (*SelfSubjectReview, error)
 }
 
 type authenticationClient struct {
@@ -49,6 +51,16 @@ func (c *authenticationClient) CreateToken(ctx context.Context, in *TokenRequest
 	return out, nil
 }
 
+func (c *authenticationClient) CreateSelfSubjectReview(ctx context.Context, in *SelfSubjectReview, opts ...grpc.CallOption) (*SelfSubjectReview, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SelfSubjectReview)
+	err := c.cc.Invoke(ctx, Authentication_CreateSelfSubjectReview_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuthenticationServer is the server API for Authentication service.
 // All implementations must embed UnimplementedAuthenticationServer
 // for forward compatibility.
@@ -56,6 +68,7 @@ func (c *authenticationClient) CreateToken(ctx context.Context, in *TokenRequest
 // 认证服务
 type AuthenticationServer interface {
 	CreateToken(context.Context, *TokenRequest) (*TokenRequest, error)
+	CreateSelfSubjectReview(context.Context, *SelfSubjectReview) (*SelfSubjectReview, error)
 	mustEmbedUnimplementedAuthenticationServer()
 }
 
@@ -68,6 +81,9 @@ type UnimplementedAuthenticationServer struct{}
 
 func (UnimplementedAuthenticationServer) CreateToken(context.Context, *TokenRequest) (*TokenRequest, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateToken not implemented")
+}
+func (UnimplementedAuthenticationServer) CreateSelfSubjectReview(context.Context, *SelfSubjectReview) (*SelfSubjectReview, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateSelfSubjectReview not implemented")
 }
 func (UnimplementedAuthenticationServer) mustEmbedUnimplementedAuthenticationServer() {}
 func (UnimplementedAuthenticationServer) testEmbeddedByValue()                        {}
@@ -108,6 +124,24 @@ func _Authentication_CreateToken_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Authentication_CreateSelfSubjectReview_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SelfSubjectReview)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthenticationServer).CreateSelfSubjectReview(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Authentication_CreateSelfSubjectReview_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthenticationServer).CreateSelfSubjectReview(ctx, req.(*SelfSubjectReview))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Authentication_ServiceDesc is the grpc.ServiceDesc for Authentication service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -119,7 +153,11 @@ var Authentication_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "CreateToken",
 			Handler:    _Authentication_CreateToken_Handler,
 		},
+		{
+			MethodName: "CreateSelfSubjectReview",
+			Handler:    _Authentication_CreateSelfSubjectReview_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "pkg/apis/authn/v1/grpc/token_request.proto",
+	Metadata: "pkg/apis/authn/v1/grpc/authn.proto",
 }
