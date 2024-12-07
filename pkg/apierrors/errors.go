@@ -6,6 +6,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
+	metav1grpc "github.com/yhlooo/scaf/pkg/apis/meta/v1/grpc"
 )
 
 // 周知 metav1.Status Reason 的值
@@ -28,8 +29,12 @@ func NewFromError(err error) *metav1.Status {
 
 	if grpcStatus, ok := grpcstatus.FromError(err); ok {
 		for _, d := range grpcStatus.Details() {
-			if status, isStatus := d.(*metav1.Status); isStatus {
-				return status
+			if status, isStatus := d.(*metav1grpc.Status); isStatus {
+				return &metav1.Status{
+					Code:    int(status.Code),
+					Reason:  status.Reason,
+					Message: status.Message,
+				}
 			}
 		}
 	}
