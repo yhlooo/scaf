@@ -112,7 +112,7 @@ func (c *WithPersistentTokenClient) Login(ctx context.Context, opts LoginOptions
 
 	if ret, err := c.Client.CreateSelfSubjectReview(ctx, &authnv1.SelfSubjectReview{}); err == nil {
 		// 已经登陆
-		logger.Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
+		logger.V(1).Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
 		return c, nil
 	}
 
@@ -128,11 +128,11 @@ func (c *WithPersistentTokenClient) Login(ctx context.Context, opts LoginOptions
 	client := c.Client.WithToken(string(token))
 	ret, err := client.CreateSelfSubjectReview(ctx, &authnv1.SelfSubjectReview{})
 	if err != nil {
-		logger.Info(fmt.Sprintf("login with exists token error: %v, renew user", err))
+		logger.Info(fmt.Sprintf("WARN login with exists token error: %v, renew user", err))
 		return c.renewUserLogin(ctx)
 	}
 
-	logger.Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
+	logger.V(1).Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
 	return &WithPersistentTokenClient{Client: client, tokenFile: c.tokenFile}, nil
 }
 

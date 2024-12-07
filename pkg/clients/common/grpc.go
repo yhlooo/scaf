@@ -81,7 +81,7 @@ func (c *grpcClient) Login(ctx context.Context, opts LoginOptions) (Client, erro
 	if !opts.RenewUser {
 		if ret, err := c.CreateSelfSubjectReview(ctx, &authnv1.SelfSubjectReview{}); err == nil {
 			// 已经登陆
-			logger.Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
+			logger.V(1).Info(fmt.Sprintf("already login as %q", ret.Status.UserInfo.Username))
 			return c, nil
 		}
 	}

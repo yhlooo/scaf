@@ -24,6 +24,7 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 		Use: "scaf",
 		Short: "Establishes point-to-point streams by pairing and relaying with reverse connections, " +
 			"for remote shell, file transfer, etc.",
+		SilenceUsage: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			// 校验全局选项
 			if err := opts.Global.Validate(); err != nil {
@@ -51,6 +52,8 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 
 		NewSendFileCommandWithOptions(&opts.SendFile),
 		NewReceiveFileCommandWithOptions(&opts.ReceiveFile),
+
+		NewStreamCommandWithOptions(&opts.Stream),
 
 		NewVersionCommandWithOptions(&opts.Version),
 	)
