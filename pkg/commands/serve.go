@@ -21,7 +21,7 @@ func NewServeCommandWithOptions(opts *options.ServeOptions) *cobra.Command {
 			logger := logr.FromContextOrDiscard(ctx)
 
 			s := server.NewServer(server.Options{
-				HTTPAddr: opts.HTTPAddr,
+				ListenAddr: opts.ListenAddr,
 				TokenAuthenticator: auth.TokenAuthenticatorOptions{
 					Issuer:  opts.JWTIssuer,
 					SignKey: opts.JWTKey,
@@ -30,7 +30,7 @@ func NewServeCommandWithOptions(opts *options.ServeOptions) *cobra.Command {
 			if err := s.Start(ctx); err != nil {
 				return fmt.Errorf("start server error: %w", err)
 			}
-			logger.Info(fmt.Sprintf("scaf serve http on %q", s.HTTPAddr().String()))
+			logger.Info(fmt.Sprintf("scaf serve on %q", s.Address().String()))
 			if len(opts.JWTKey) == 0 {
 				// key 是随机生成的，需要生成个管理员 token ，否则没有地方能获取该 token
 				token, _ := s.AdminToken()

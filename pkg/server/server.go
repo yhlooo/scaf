@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/soheilhy/cmux"
 	"google.golang.org/grpc"
 
 	authnv1grpc "github.com/yhlooo/scaf/pkg/apis/authn/v1/grpc"
@@ -20,28 +21,22 @@ import (
 )
 
 const (
-	loggerName      = "server"
-	defaultHTTPAddr = ":80"
-	defaultGRPCAddr = ":9443"
+	loggerName        = "server"
+	defaultListenAddr = ":9443"
 )
 
 // Options 是 Server 运行选项
 type Options struct {
-	// HTTP 监听地址
-	HTTPAddr string
-	// gRPC 监听地址
-	GRPCAddr string
+	// 监听地址
+	ListenAddr string
 	// Token 认证器选项
 	TokenAuthenticator auth.TokenAuthenticatorOptions
 }
 
 // Complete 将选项补充完整
 func (opts *Options) Complete() {
-	if opts.HTTPAddr == "" {
-		opts.HTTPAddr = defaultHTTPAddr
-	}
-	if opts.GRPCAddr == "" {
-		opts.GRPCAddr = defaultGRPCAddr
+	if opts.ListenAddr == "" {
+		opts.ListenAddr = defaultListenAddr
 	}
 }
 
@@ -75,6 +70,9 @@ type Server struct {
 	cancel    context.CancelFunc
 	done      chan struct{}
 
+	listener net.Listener
+	cmux     cmux.CMux
+
 	httpListener net.Listener
 	httpHandler  http.Handler
 
@@ -103,10 +101,18 @@ func (s *Server) Start(ctx context.Context) error {
 		ctx, s.cancel = context.WithCancel(logr.NewContext(ctx, logger))
 		s.done = make(chan struct{})
 
-		s.httpListener, err = net.Listen("tcp", s.opts.HTTPAddr)
+		// 监听端口
+		s.listener, err = net.Listen("tcp", s.opts.ListenAddr)
 		if err != nil {
 			return
 		}
+		s.cmux = cmux.New(s.listener)
+		// 根据协议分流
+		s.grpcListener = s.cmux.MatchWithWriters(
+			cmux.HTTP2MatchHeaderFieldSendSettings("content-type", "application/grpc"),
+		)
+		s.httpListener = s.cmux.Match(cmux.Any())
+
 		s.httpHandler = serverhttp.NewHTTPHandler(
 			s.genericAuthnServer,
 			s.genericStreamsServer,
@@ -115,10 +121,6 @@ func (s *Server) Start(ctx context.Context) error {
 			},
 		)
 
-		s.grpcListener, err = net.Listen("tcp", s.opts.GRPCAddr)
-		if err != nil {
-			return
-		}
 		s.grpcServer = grpc.NewServer(
 			grpc.ChainUnaryInterceptor(
 				servergrpc.GetTokenInterceptor,
@@ -176,8 +178,8 @@ func (s *Server) Done() <-chan struct{} {
 	return s.done
 }
 
-// HTTPAddr 返回 HTTP 实际监听地址
-func (s *Server) HTTPAddr() net.Addr {
+// Address 返回实际监听地址
+func (s *Server) Address() net.Addr {
 	s.startLock.RLock()
 	defer s.startLock.RUnlock()
 
@@ -197,14 +199,25 @@ func (s *Server) run(ctx context.Context) {
 	logger := logr.FromContextOrDiscard(ctx)
 
 	defer func() {
-		if err := s.httpListener.Close(); err != nil {
-			logger.Error(err, "close http listener error")
-		}
 		s.grpcServer.GracefulStop()
-		if err := s.grpcListener.Close(); err != nil {
-			logger.Error(err, "close grpc listener error")
+		if err := s.listener.Close(); err != nil {
+			logger.Error(err, "close tcp listener error")
 		}
 		close(s.done)
+	}()
+
+	cmuxDone := make(chan struct{})
+	go func() {
+		defer close(cmuxDone)
+		if err := s.cmux.Serve(); err != nil {
+			select {
+			case <-ctx.Done():
+				// ctx 结束了错误就没所谓了
+				return
+			default:
+			}
+			logger.Error(err, "cmux serve error")
+		}
 	}()
 
 	httpDone := make(chan struct{})
@@ -237,6 +250,7 @@ func (s *Server) run(ctx context.Context) {
 
 	select {
 	case <-ctx.Done():
+	case <-cmuxDone:
 	case <-httpDone:
 	case <-grpcDone:
 	}
