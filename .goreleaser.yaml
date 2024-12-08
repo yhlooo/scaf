@@ -1,0 +1,33 @@
+# goreleaser 配置
+# 参考 https://goreleaser.com
+
+version: 2
+
+builds:
+  - binary: scaf
+    main: "./cmd/scaf"
+    env:
+      - "CGO_ENABLED=0"
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - "-X github.com/yhlooo/scaf/pkg/version.version={{ .Version }}"
+      - "-w"
+
+archives:
+  - format: "tar.gz"
+    name_template: "{{ .Binary }}-v{{- .Version }}-{{- .Os }}-{{- .Arch }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^style:"
+      - "^chore:"
