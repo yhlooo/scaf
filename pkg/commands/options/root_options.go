@@ -14,6 +14,8 @@ func NewDefaultOptions() Options {
 		SendFile:    NewDefaultSendFileOptions(),
 		ReceiveFile: NewDefaultReceiveFileOptions(),
 
+		Bench: NewDefaultBenchOptions(),
+
 		Stream: NewDefaultStreamOptions(),
 
 		Version: NewDefaultVersionOptions(),
@@ -39,6 +41,9 @@ type Options struct {
 	SendFile SendFileOptions `json:"sendFile,omitempty" yaml:"sendFile,omitempty"`
 	// receive-file 子命令选项
 	ReceiveFile ReceiveFileOptions `json:"receiveFile,omitempty" yaml:"receiveFile,omitempty"`
+
+	// bench 子命令选项
+	Bench BenchOptions `json:"bench,omitempty" yaml:"bench,omitempty"`
 
 	// stream 子命令选项
 	Stream StreamOptions `json:"stream,omitempty" yaml:"stream,omitempty"`

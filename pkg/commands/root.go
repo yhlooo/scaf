@@ -53,6 +53,8 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 		NewSendFileCommandWithOptions(&opts.SendFile),
 		NewReceiveFileCommandWithOptions(&opts.ReceiveFile),
 
+		NewBenchCommandWithOptions(&opts.Bench),
+
 		NewStreamCommandWithOptions(&opts.Stream),
 
 		NewVersionCommandWithOptions(&opts.Version),
