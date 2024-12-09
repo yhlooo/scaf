@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -76,6 +77,7 @@ func (c *BenchmarkClient) Run(ctx context.Context, stream *streamv1.Stream) (*Re
 	}
 	conn = streams.ConnectionWithLog{Connection: conn}
 	defer func() {
+		cancel()
 		_ = conn.Close(ctx)
 	}()
 	receiveMsgCh := make(chan Message)
@@ -91,6 +93,7 @@ func (c *BenchmarkClient) Run(ctx context.Context, stream *streamv1.Stream) (*Re
 	report.Ping = *pingRet
 
 	// 测试只读速率
+	logger.Info("test read ...")
 	readRet, _, err := c.testReadWrite(ctx, conn, receiveMsgCh, true, false, 10*time.Second)
 	if err != nil {
 		return report, fmt.Errorf("test read error: %w", err)
@@ -98,7 +101,13 @@ func (c *BenchmarkClient) Run(ctx context.Context, stream *streamv1.Stream) (*Re
 	report.ReadOnly = *readRet
 	logger.Info(fmt.Sprintf("received %d packages, size: %d", readRet.Packages, readRet.Size))
 
+	logger.Info(fmt.Sprintf("waiting for connection idle ..."))
+	if err := c.waitForConnIdle(ctx, receiveMsgCh, 2*time.Second); err != nil {
+		return report, fmt.Errorf("wait for connection idle error: %w", err)
+	}
+
 	// 测试只写速率
+	logger.Info("test write ...")
 	_, writeRet, err := c.testReadWrite(ctx, conn, receiveMsgCh, false, true, 10*time.Second)
 	if err != nil {
 		return report, fmt.Errorf("test write error: %w", err)
@@ -106,7 +115,13 @@ func (c *BenchmarkClient) Run(ctx context.Context, stream *streamv1.Stream) (*Re
 	report.WriteOnly = *writeRet
 	logger.Info(fmt.Sprintf("sent %d packages, size: %d", writeRet.Packages, writeRet.Size))
 
+	logger.Info(fmt.Sprintf("waiting for connection idle ..."))
+	if err := c.waitForConnIdle(ctx, receiveMsgCh, 2*time.Second); err != nil {
+		return report, fmt.Errorf("wait for connection idle error: %w", err)
+	}
+
 	// 测试同时读写速率
+	logger.Info("test read and write ...")
 	readRet, writeRet, err = c.testReadWrite(ctx, conn, receiveMsgCh, true, true, 10*time.Second)
 	if err != nil {
 		return report, fmt.Errorf("test read write error: %w", err)
@@ -212,7 +227,8 @@ func (c *BenchmarkClient) testReadWrite(
 	}
 
 	var sendDone chan struct{}
-	sendSeq := uint32(1)
+	sendSeq := uint32(0)
+	sendLock := sync.Mutex{}
 	if write {
 		// 发送数据
 		sendDone = make(chan struct{})
@@ -225,10 +241,12 @@ func (c *BenchmarkClient) testReadWrite(
 					return
 				default:
 				}
+				sendLock.Lock()
+				sendSeq++
 				if err := conn.Send(ctx, NewRandData(sendSeq, readWritePackageSize).Raw()); err != nil {
 					logger.Error(err, fmt.Sprintf("send data %d error", sendSeq))
 				}
-				sendSeq++
+				sendLock.Unlock()
 			}
 		}()
 	}
@@ -279,9 +297,12 @@ readDataLoop:
 	}
 
 	// 发送结束指令
+	sendLock.Lock()
+	sendPkgs := sendSeq
 	if err := conn.Send(ctx, StopReadWrite{}.Raw()); err != nil {
 		logger.Error(err, fmt.Sprintf("send stop read write message error"))
 	}
+	sendLock.Unlock()
 
 	readLossRate := float64(1)
 	if lastSeq > 0 {
@@ -321,8 +342,8 @@ readDataLoop:
 				continue
 			case WriteResult:
 				writeLossRate := float64(1)
-				if sendSeq > 0 {
-					writeLossRate = float64(sendSeq-typedMsg.ReceivedPackageCount) / float64(sendSeq)
+				if sendPkgs > 0 {
+					writeLossRate = float64(sendPkgs-typedMsg.ReceivedPackageCount) / float64(sendPkgs)
 				}
 				writeResult = &TransmissionResult{
 					Throughput: uint64(typedMsg.ReceivedPackageCount) * readWritePackageSize * 1000 /
@@ -339,6 +360,22 @@ readDataLoop:
 	}
 
 	return readResult, nil, nil
+}
+
+// waitForConnIdle 等待连接空闲
+func (c *BenchmarkClient) waitForConnIdle(ctx context.Context, msgCh <-chan Message, idleTime time.Duration) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case _, ok := <-msgCh:
+			if !ok {
+				return fmt.Errorf("receive message channel closed")
+			}
+		case <-time.After(idleTime):
+			return nil
+		}
+	}
 }
 
 // runReceiveLoop 运行接收循环

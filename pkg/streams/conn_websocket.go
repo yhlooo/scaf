@@ -3,6 +3,7 @@ package streams
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,6 +21,7 @@ type WebSocketConnection struct {
 	name     string
 	conn     *websocket.Conn
 	closeErr error
+	sendLock sync.Mutex
 }
 
 var _ Connection = &WebSocketConnection{}
@@ -35,6 +37,8 @@ func (conn *WebSocketConnection) Send(_ context.Context, data []byte) error {
 		return conn.closeErr
 	}
 
+	conn.sendLock.Lock()
+	defer conn.sendLock.Unlock()
 	err := conn.conn.WriteMessage(websocket.BinaryMessage, data)
 	if err != nil {
 		if websocket.IsUnexpectedCloseError(err) {
