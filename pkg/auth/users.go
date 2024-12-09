@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	metav1 "github.com/yhlooo/scaf/pkg/apis/meta/v1"
-	"github.com/yhlooo/scaf/pkg/randutil"
+	"github.com/yhlooo/scaf/pkg/utils/randutil"
 )
 
 const (

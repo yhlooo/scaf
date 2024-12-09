@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/yhlooo/scaf/pkg/randutil"
 	"github.com/yhlooo/scaf/pkg/server/generic"
+	"github.com/yhlooo/scaf/pkg/utils/randutil"
 )
 
 // GetTokenHandler 从请求中获取 Token 并注入上下文的 HTTP 处理器

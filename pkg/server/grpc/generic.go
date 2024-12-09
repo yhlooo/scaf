@@ -8,8 +8,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/yhlooo/scaf/pkg/randutil"
 	"github.com/yhlooo/scaf/pkg/server/generic"
+	"github.com/yhlooo/scaf/pkg/utils/randutil"
 )
 
 const (
