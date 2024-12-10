@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -12,6 +11,7 @@ import (
 	clientsbench "github.com/yhlooo/scaf/pkg/clients/bench"
 	clientscommon "github.com/yhlooo/scaf/pkg/clients/common"
 	"github.com/yhlooo/scaf/pkg/commands/options"
+	"github.com/yhlooo/scaf/pkg/utils/units"
 )
 
 // NewBenchCommandWithOptions 创建基于选项的 bench 子命令
@@ -74,11 +74,45 @@ func NewBenchCommandWithOptions(opts *options.BenchOptions) *cobra.Command {
 			}
 
 			// 展示结果
-			raw, err := json.MarshalIndent(report, "", "  ")
-			if err != nil {
-				return fmt.Errorf("marshal result to json error: %w", err)
-			}
-			fmt.Println(string(raw))
+			fmt.Println()
+			fmt.Println("Result:")
+			fmt.Println()
+			fmt.Println("Ping:")
+			fmt.Printf(
+				"  Time:   %s\t(lost: %.2f%%)\n",
+				report.Ping.RoundTripTime, report.Ping.LossRate*100,
+			)
+			fmt.Println("Read Only:")
+			fmt.Printf(
+				"  Read:   %sB/s\t(read: %sB, packages: %s, lost: %.2f%%)\n",
+				units.NewIECValue(int64(report.ReadOnly.Throughput)).RoundString(2),
+				units.NewIECValue(int64(report.ReadOnly.Size)).RoundString(2),
+				units.NewSIValue(int64(report.ReadOnly.Packages)).RoundString(2),
+				report.ReadOnly.LossRate*100,
+			)
+			fmt.Println("Write Only:")
+			fmt.Printf(
+				"  Write:  %sB/s\t(write: %sB, packages: %s, lost: %.2f%%)\n",
+				units.NewIECValue(int64(report.WriteOnly.Throughput)).RoundString(2),
+				units.NewIECValue(int64(report.WriteOnly.Size)).RoundString(2),
+				units.NewSIValue(int64(report.WriteOnly.Packages)).RoundString(2),
+				report.WriteOnly.LossRate*100,
+			)
+			fmt.Println("Read and Write:")
+			fmt.Printf(
+				"  Read:   %sB/s\t(read: %sB, packages: %s, lost: %.2f%%)\n",
+				units.NewIECValue(int64(report.ReadWrite.Read.Throughput)).RoundString(2),
+				units.NewIECValue(int64(report.ReadWrite.Read.Size)).RoundString(2),
+				units.NewSIValue(int64(report.ReadWrite.Read.Packages)).RoundString(2),
+				report.ReadWrite.Read.LossRate*100,
+			)
+			fmt.Printf(
+				"  Write:  %sB/s\t(write: %sB, packages: %s, lost: %.2f%%)\n",
+				units.NewIECValue(int64(report.ReadWrite.Write.Throughput)).RoundString(2),
+				units.NewIECValue(int64(report.ReadWrite.Write.Size)).RoundString(2),
+				units.NewSIValue(int64(report.ReadWrite.Write.Packages)).RoundString(2),
+				report.ReadWrite.Write.LossRate*100,
+			)
 			return nil
 		},
 	}
