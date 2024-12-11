@@ -48,27 +48,38 @@ type ConnectStreamOptions struct {
 	ConnectionName string
 }
 
+// ClientOptions 客户端选项
+type ClientOptions struct {
+	// 服务端 URL
+	Server string
+	// 用于认证的 Token
+	Token string
+	// 对传输数据进行压缩
+	Compress bool
+}
+
 // NewClient 创建客户端
-func NewClient(server string, token string) (Client, error) {
-	urlObj, err := url.Parse(server)
+func NewClient(opts ClientOptions) (Client, error) {
+	urlObj, err := url.Parse(opts.Server)
 	if err != nil {
-		return nil, fmt.Errorf("invalid server url %q: %w", server, err)
+		return nil, fmt.Errorf("invalid server url %q: %w", opts.Server, err)
 	}
 
 	var client Client
 	switch urlObj.Scheme {
 	case "http", "https":
 		client, err = NewHTTPClient(HTTPClientOptions{
-			ServerURL: server,
-			Token:     token,
+			ServerURL: opts.Server,
+			Token:     opts.Token,
 		})
 	case "grpc":
 		client, err = NewGRPCClient(GRPCClientOptions{
 			ServerAddress: urlObj.Host,
-			Token:         token,
+			Token:         opts.Token,
+			Compress:      opts.Compress,
 		})
 	default:
-		return nil, fmt.Errorf("invalid server url %q: unsupported scheme %q", server, urlObj.Scheme)
+		return nil, fmt.Errorf("invalid server url %q: unsupported scheme %q", opts.Server, urlObj.Scheme)
 	}
 	if err != nil {
 		return nil, err

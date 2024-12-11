@@ -7,6 +7,7 @@ import (
 	"github.com/go-logr/logr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/yhlooo/scaf/pkg/apierrors"
@@ -28,6 +29,8 @@ type GRPCClientOptions struct {
 	ServerAddress string
 	// 用于认证的 Token
 	Token string
+	// 对传输数据进行压缩
+	Compress bool
 }
 
 // Complete 将选项补充完整
@@ -48,6 +51,7 @@ func NewGRPCClient(opts GRPCClientOptions) (Client, error) {
 		authnClient:   authnv1grpc.NewAuthenticationClient(conn),
 		streamsClient: streamv1grpc.NewStreamsClient(conn),
 		token:         opts.Token,
+		compress:      opts.Compress,
 	}, nil
 }
 
@@ -56,6 +60,7 @@ type grpcClient struct {
 	authnClient   authnv1grpc.AuthenticationClient
 	streamsClient streamv1grpc.StreamsClient
 	token         string
+	compress      bool
 }
 
 var _ Client = (*grpcClient)(nil)
@@ -158,7 +163,11 @@ func (c *grpcClient) ConnectStream(
 		servergrpc.MetadataKeyStreamName, name,
 		servergrpc.MetadataKeyConnectionName, opts.ConnectionName,
 	)
-	streamClient, err := c.streamsClient.ConnectStream(ctx)
+	var callOpts []grpc.CallOption
+	if c.compress {
+		callOpts = append(callOpts, grpc.UseCompressor(gzip.Name))
+	}
+	streamClient, err := c.streamsClient.ConnectStream(ctx, callOpts...)
 	if err != nil {
 		return nil, apierrors.NewFromError(err)
 	}

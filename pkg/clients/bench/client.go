@@ -102,7 +102,7 @@ func (c *BenchmarkClient) Run(ctx context.Context, stream *streamv1.Stream) (*Re
 	logger.Info(fmt.Sprintf("received %d packages, size: %d", readRet.Packages, readRet.Size))
 
 	logger.Info(fmt.Sprintf("waiting for connection idle ..."))
-	if err := c.waitForConnIdle(ctx, receiveMsgCh, 2*time.Second); err != nil {
+	if err := c.waitForConnIdle(ctx, receiveMsgCh, 5*time.Second); err != nil {
 		return report, fmt.Errorf("wait for connection idle error: %w", err)
 	}
 
@@ -116,7 +116,7 @@ func (c *BenchmarkClient) Run(ctx context.Context, stream *streamv1.Stream) (*Re
 	logger.Info(fmt.Sprintf("sent %d packages, size: %d", writeRet.Packages, writeRet.Size))
 
 	logger.Info(fmt.Sprintf("waiting for connection idle ..."))
-	if err := c.waitForConnIdle(ctx, receiveMsgCh, 2*time.Second); err != nil {
+	if err := c.waitForConnIdle(ctx, receiveMsgCh, 5*time.Second); err != nil {
 		return report, fmt.Errorf("wait for connection idle error: %w", err)
 	}
 
@@ -318,7 +318,7 @@ readDataLoop:
 	if write {
 		// 等待写结果
 		close(sendDone)
-		timer = time.NewTimer(10 * time.Second)
+		timer = time.NewTimer(60 * time.Second)
 		for {
 			var msg Message
 			var ok bool

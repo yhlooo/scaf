@@ -1,6 +1,13 @@
 package options
 
-import "github.com/spf13/pflag"
+import (
+	"context"
+	"fmt"
+
+	"github.com/spf13/pflag"
+
+	clientscommon "github.com/yhlooo/scaf/pkg/clients/common"
+)
 
 // NewDefaultClientOptions 创建默认 ClientOptions
 func NewDefaultClientOptions() ClientOptions {
@@ -22,6 +29,8 @@ type ClientOptions struct {
 	NoLogin bool `json:"noLogin,omitempty" yaml:"noLogin,omitempty"`
 	// 始终使用新用户登录
 	RenewUser bool `json:"renewUser,omitempty" yaml:"renewUser,omitempty"`
+	// 是否对传输数据进行压缩
+	Compress bool `json:"compress,omitempty" yaml:"compress,omitempty"`
 }
 
 // AddPFlags 绑定选项到命令行
@@ -30,6 +39,26 @@ func (opts *ClientOptions) AddPFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&opts.Token, "token", opts.Token, "Token")
 	fs.BoolVar(&opts.NoLogin, "no-login", opts.NoLogin, "Do not login and access anonymously")
 	fs.BoolVar(&opts.RenewUser, "renew-user", opts.RenewUser, "Renew user")
+	fs.BoolVar(&opts.Compress, "compress", opts.Compress, "Compress the transport stream")
+}
+
+// NewClient 基于选项创建客户端
+func (opts *ClientOptions) NewClient(ctx context.Context) (clientscommon.Client, error) {
+	client, err := clientscommon.NewClient(clientscommon.ClientOptions{
+		Server:   opts.Server,
+		Token:    opts.Token,
+		Compress: opts.Compress,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !opts.NoLogin {
+		client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
+		if err != nil {
+			return nil, fmt.Errorf("login error: %w", err)
+		}
+	}
+	return client, nil
 }
 
 // NewDefaultConnectOptions 创建默认 ConnectOptions

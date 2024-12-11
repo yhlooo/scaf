@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	clientscommon "github.com/yhlooo/scaf/pkg/clients/common"
 	clientsexec "github.com/yhlooo/scaf/pkg/clients/exec"
 	"github.com/yhlooo/scaf/pkg/commands/options"
 )
@@ -21,15 +20,9 @@ func NewAttachCommandWithOptions(opts *options.AttachOptions) *cobra.Command {
 			ctx := cmd.Context()
 
 			// 创建客户端
-			client, err := clientscommon.NewClient(opts.Server, opts.Token)
+			client, err := opts.NewClient(ctx)
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
-			}
-			if !opts.NoLogin {
-				client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
-				if err != nil {
-					return fmt.Errorf("login error: %w", err)
-				}
 			}
 			term := clientsexec.NewTerminal(client)
 

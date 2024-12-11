@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	streamv1 "github.com/yhlooo/scaf/pkg/apis/stream/v1"
-	clientscommon "github.com/yhlooo/scaf/pkg/clients/common"
 	clientsexec "github.com/yhlooo/scaf/pkg/clients/exec"
 	"github.com/yhlooo/scaf/pkg/commands/options"
 )
@@ -28,15 +27,9 @@ scaf exec -s SERVER --stream STREAM --token TOKEN`,
 			logger := logr.FromContextOrDiscard(ctx)
 
 			// 创建客户端
-			client, err := clientscommon.NewClient(opts.Server, opts.Token)
+			client, err := opts.NewClient(ctx)
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
-			}
-			if !opts.NoLogin {
-				client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
-				if err != nil {
-					return fmt.Errorf("login error: %w", err)
-				}
 			}
 			agent := clientsexec.NewAgent(client)
 

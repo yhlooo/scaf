@@ -7,7 +7,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
-	clientscommon "github.com/yhlooo/scaf/pkg/clients/common"
 	"github.com/yhlooo/scaf/pkg/commands/options"
 )
 
@@ -38,15 +37,9 @@ func NewStreamGetCommandWithOptions(opts *options.StreamGetOptions) *cobra.Comma
 			ctx := cmd.Context()
 
 			// 创建客户端
-			client, err := clientscommon.NewClient(opts.Server, opts.Token)
+			client, err := opts.NewClient(ctx)
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
-			}
-			if !opts.NoLogin {
-				client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
-				if err != nil {
-					return fmt.Errorf("login error: %w", err)
-				}
 			}
 
 			stream, err := client.GetStream(ctx, args[0])
@@ -80,15 +73,9 @@ func NewStreamListCommandWithOptions(opts *options.StreamListOptions) *cobra.Com
 			ctx := cmd.Context()
 
 			// 创建客户端
-			client, err := clientscommon.NewClient(opts.Server, opts.Token)
+			client, err := opts.NewClient(ctx)
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
-			}
-			if !opts.NoLogin {
-				client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
-				if err != nil {
-					return fmt.Errorf("login error: %w", err)
-				}
 			}
 
 			streamList, err := client.ListStreams(ctx)
@@ -121,15 +108,9 @@ func NewStreamDeleteCommandWithOptions(opts *options.StreamDeleteOptions) *cobra
 			logger := logr.FromContextOrDiscard(ctx)
 
 			// 创建客户端
-			client, err := clientscommon.NewClient(opts.Server, opts.Token)
+			client, err := opts.NewClient(ctx)
 			if err != nil {
 				return fmt.Errorf("create client error: %w", err)
-			}
-			if !opts.NoLogin {
-				client, err = client.Login(ctx, clientscommon.LoginOptions{RenewUser: opts.RenewUser})
-				if err != nil {
-					return fmt.Errorf("login error: %w", err)
-				}
 			}
 
 			if err := client.DeleteStream(ctx, args[0]); err != nil {

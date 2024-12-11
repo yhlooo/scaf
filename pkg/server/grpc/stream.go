@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	_ "google.golang.org/grpc/encoding/gzip" // 注册 gzip 压缩器
 	"google.golang.org/grpc/metadata"
 
 	"github.com/yhlooo/scaf/pkg/apierrors"
