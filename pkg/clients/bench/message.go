@@ -85,8 +85,9 @@ const (
 // NewRandData 创建随机数据
 func NewRandData(seq uint32, size uint64) Data {
 	content := make([]byte, size-9)
+	randData := rand.Uint64()
 	for i := uint64(0); i < size-9-7; i += 8 {
-		binary.BigEndian.PutUint64(content[i:], rand.Uint64())
+		binary.BigEndian.PutUint64(content[i:], randData)
 	}
 	return Data{
 		Seq:      seq,
