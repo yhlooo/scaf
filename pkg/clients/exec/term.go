@@ -64,7 +64,9 @@ func (t *Terminal) Run(ctx context.Context, stream *streamv1.Stream, stdin io.Re
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
-	conn = streams.ConnectionWithLog{Connection: conn}
+	if logger.V(1).Enabled() {
+		conn = streams.ConnectionWithLog{Connection: conn}
+	}
 	defer func() {
 		_ = conn.Close(ctx)
 	}()

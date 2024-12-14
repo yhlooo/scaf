@@ -75,7 +75,9 @@ func (c *BenchmarkClient) Run(ctx context.Context, stream *streamv1.Stream) (*Re
 	if err != nil {
 		return nil, fmt.Errorf("connect to server error: %w", err)
 	}
-	conn = streams.ConnectionWithLog{Connection: conn}
+	if logger.V(1).Enabled() {
+		conn = streams.ConnectionWithLog{Connection: conn}
+	}
 	defer func() {
 		cancel()
 		_ = conn.Close(ctx)

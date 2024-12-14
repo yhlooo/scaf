@@ -58,7 +58,9 @@ func (s *BufferedStream) Join(ctx context.Context, conn Connection) error {
 	if conn == nil {
 		return fmt.Errorf("cannot join nil connection")
 	}
-	conn = ConnectionWithLog{Connection: conn}
+	if logger.V(1).Enabled() {
+		conn = ConnectionWithLog{Connection: conn}
+	}
 
 	s.lock.Lock()
 	defer s.lock.Unlock()

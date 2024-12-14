@@ -61,7 +61,9 @@ func (c *CopyFileClient) Send(ctx context.Context, stream *streamv1.Stream, path
 	if err != nil {
 		return fmt.Errorf("connect to server error: %w", err)
 	}
-	conn = streams.ConnectionWithLog{Connection: conn}
+	if logger.V(1).Enabled() {
+		conn = streams.ConnectionWithLog{Connection: conn}
+	}
 	defer func() {
 		_ = conn.Close(ctx)
 	}()
@@ -178,7 +180,9 @@ func (c *CopyFileClient) Receive(ctx context.Context, stream *streamv1.Stream, p
 	if err != nil {
 		return "", fmt.Errorf("connect to server error: %w", err)
 	}
-	conn = streams.ConnectionWithLog{Connection: conn}
+	if logger.V(1).Enabled() {
+		conn = streams.ConnectionWithLog{Connection: conn}
+	}
 	defer func() {
 		_ = conn.Close(ctx)
 	}()
