@@ -1,9 +1,9 @@
 package bench
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"math/rand/v2"
 )
 
@@ -19,9 +19,9 @@ func ParseMessage(raw []byte) (Message, error) {
 			return nil, fmt.Errorf("invalid data message length: %d (at lease 37 bytes)", len(raw))
 		}
 		return Data{
-			Seq:       binary.BigEndian.Uint32(raw[1:5]),
-			Sha256sum: [32]byte(raw[5:37]),
-			Content:   raw[37:],
+			Seq:      binary.BigEndian.Uint32(raw[1:5]),
+			Checksum: binary.BigEndian.Uint32(raw[5:9]),
+			Content:  raw[9:],
 		}, nil
 	case PingFlag:
 		if len(raw) != 5 {
@@ -84,22 +84,25 @@ const (
 
 // NewRandData 创建随机数据
 func NewRandData(seq uint32, size uint64) Data {
-	content := make([]byte, size-37)
-	for i := uint64(0); i < size-37-7; i += 8 {
+	content := make([]byte, size-9)
+	for i := uint64(0); i < size-9-7; i += 8 {
 		binary.BigEndian.PutUint64(content[i:], rand.Uint64())
 	}
 	return Data{
-		Seq:       seq,
-		Sha256sum: sha256.Sum256(content),
-		Content:   content,
+		Seq:      seq,
+		Checksum: crc32.ChecksumIEEE(content),
+		Content:  content,
 	}
 }
 
 // Data 数据消息
 type Data struct {
-	Seq       uint32
-	Sha256sum [32]byte
-	Content   []byte
+	// 包序号
+	Seq uint32
+	// Content 的 CRC32 校验和
+	Checksum uint32
+	// 数据内容
+	Content []byte
 }
 
 var _ Message = Data{}
@@ -110,13 +113,13 @@ func (d Data) Type() MessageType {
 }
 
 // Raw 返回消息原始数据
-// 格式： 0(byte) seq(uint32) sha256sum([32]byte) content([]byte)
+// 格式： 0(byte) seq(uint32) checksum(uint32) content([]byte)
 func (d Data) Raw() []byte {
-	raw := make([]byte, len(d.Content)+37)
+	raw := make([]byte, len(d.Content)+9)
 	raw[0] = DataFlag
 	binary.BigEndian.PutUint32(raw[1:5], d.Seq)
-	copy(raw[5:37], d.Sha256sum[:])
-	copy(raw[37:], d.Content)
+	binary.BigEndian.PutUint32(raw[5:9], d.Checksum)
+	copy(raw[9:], d.Content)
 	return raw
 }
 

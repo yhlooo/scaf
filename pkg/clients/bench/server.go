@@ -2,8 +2,8 @@ package bench
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
+	"hash/crc32"
 
 	"github.com/go-logr/logr"
 
@@ -139,8 +139,8 @@ func (c *BenchmarkServer) handleReadWriteRequest(
 				logger.Info(fmt.Sprintf("invalid data seq: %d (last: %d)", typedMsg.Seq, lastSeq))
 				continue
 			}
-			if sum := sha256.Sum256(typedMsg.Content); sum != typedMsg.Sha256sum {
-				logger.Info(fmt.Sprintf("invalid data sha256sum: %x (expected: %x)", sum, typedMsg.Sha256sum))
+			if sum := crc32.ChecksumIEEE(typedMsg.Content); sum != typedMsg.Checksum {
+				logger.Info(fmt.Sprintf("invalid data checksum: %d (expected: %d)", sum, typedMsg.Checksum))
 				continue
 			}
 			received++
