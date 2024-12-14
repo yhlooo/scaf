@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/pprof"
+	httppprof "net/http/pprof"
+	"os"
+	"runtime/pprof"
 
 	"github.com/bombsimon/logrusr/v4"
 	"github.com/go-logr/logr"
@@ -24,6 +26,7 @@ func NewScafCommand() *cobra.Command {
 
 // NewScafCommandWithOptions 创建基于选项的 scaf 命令
 func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
+	var cpuprofile *os.File
 	cmd := &cobra.Command{
 		Use: "scaf",
 		Short: "Establishes point-to-point streams by pairing and relaying with reverse connections, " +
@@ -36,6 +39,17 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 			}
 			// 设置日志
 			logger := setLogger(cmd, opts.Global.Verbosity)
+			// 输出 CPU 性能数据
+			if opts.Global.CPUProfile != "" {
+				var err error
+				cpuprofile, err = os.OpenFile(opts.Global.CPUProfile, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+				if err != nil {
+					return fmt.Errorf("open cpu profile file %q error: %w", opts.Global.CPUProfile, err)
+				}
+				if err := pprof.StartCPUProfile(cpuprofile); err != nil {
+					return fmt.Errorf("start cpu profile error: %w", err)
+				}
+			}
 			// 启动 pprof http 服务
 			if opts.Global.ProfilingAddr != "" {
 				if err := startServePprof(cmd.Context(), opts.Global.ProfilingAddr); err != nil {
@@ -45,6 +59,15 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 			// 输出选项
 			optsRaw, _ := json.Marshal(opts)
 			logger.V(1).Info(fmt.Sprintf("command: %q, args: %q, options: %s", cmd.Name(), args, string(optsRaw)))
+			return nil
+		},
+		PersistentPostRunE: func(cmd *cobra.Command, args []string) error {
+			if cpuprofile != nil {
+				pprof.StopCPUProfile()
+				if err := cpuprofile.Close(); err != nil {
+					return fmt.Errorf("close cpu profile file %q error: %w", opts.Global.CPUProfile, err)
+				}
+			}
 			return nil
 		},
 	}
@@ -97,11 +120,11 @@ func startServePprof(ctx context.Context, addr string) error {
 	logger := logr.FromContextOrDiscard(ctx)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/debug/pprof/", pprof.Index)
-	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
-	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.HandleFunc("/debug/pprof/", httppprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", httppprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", httppprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", httppprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", httppprof.Trace)
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
