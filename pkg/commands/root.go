@@ -1,8 +1,12 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/http/pprof"
 
 	"github.com/bombsimon/logrusr/v4"
 	"github.com/go-logr/logr"
@@ -32,6 +36,12 @@ func NewScafCommandWithOptions(opts *options.Options) *cobra.Command {
 			}
 			// 设置日志
 			logger := setLogger(cmd, opts.Global.Verbosity)
+			// 启动 pprof http 服务
+			if opts.Global.ProfilingAddr != "" {
+				if err := startServePprof(cmd.Context(), opts.Global.ProfilingAddr); err != nil {
+					return err
+				}
+			}
 			// 输出选项
 			optsRaw, _ := json.Marshal(opts)
 			logger.V(1).Info(fmt.Sprintf("command: %q, args: %q, options: %s", cmd.Name(), args, string(optsRaw)))
@@ -80,4 +90,30 @@ func setLogger(cmd *cobra.Command, verbosity uint32) logr.Logger {
 	cmd.SetContext(logr.NewContext(cmd.Context(), logger))
 
 	return logger
+}
+
+// startServePprof 开始提供 pprof http 服务
+func startServePprof(ctx context.Context, addr string) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("listen %q for pprof error: %w", addr, err)
+	}
+	logger.Info(fmt.Sprintf("pprof serve on %q", listener.Addr().String()))
+
+	go func() {
+		if err := http.Serve(listener, mux); err != nil {
+			logger.Error(err, "serve pprof error")
+		}
+	}()
+
+	return nil
 }

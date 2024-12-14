@@ -17,6 +17,8 @@ func NewDefaultGlobalOptions() GlobalOptions {
 type GlobalOptions struct {
 	// 日志数量级别（ 0 / 1 / 2 ）
 	Verbosity uint32 `json:"verbosity" yaml:"verbosity"`
+	// proof 数据导出接口监听地址
+	ProfilingAddr string `json:"profilingAddr,omitempty" yaml:"profilingAddr,omitempty"`
 }
 
 // Validate 校验选项是否合法
@@ -30,4 +32,5 @@ func (o *GlobalOptions) Validate() error {
 // AddPFlags 将选项绑定到命令行参数
 func (o *GlobalOptions) AddPFlags(fs *pflag.FlagSet) {
 	fs.Uint32VarP(&o.Verbosity, "verbose", "v", o.Verbosity, "Number for the log level verbosity (0, 1, or 2)")
+	fs.StringVar(&o.ProfilingAddr, "pprof-addr", o.ProfilingAddr, "Address to bind the pprof http server")
 }
