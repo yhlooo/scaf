@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
-	"math/rand/v2"
+	"math/rand"
 )
 
 // ParseMessage 解析消息
