@@ -137,16 +137,16 @@ func (c *BenchmarkServer) handleReadWriteRequest(
 				return fmt.Errorf("received wrong message type: %s", msg.Type())
 			}
 			// 校验
-			if typedMsg.Seq <= lastSeq {
-				logger.Info(fmt.Sprintf("invalid data seq: %d (last: %d)", typedMsg.Seq, lastSeq))
+			if typedMsg.Seq() <= lastSeq {
+				logger.Info(fmt.Sprintf("invalid data seq: %d (last: %d)", typedMsg.Seq(), lastSeq))
 				continue
 			}
-			if sum := crc32.ChecksumIEEE(typedMsg.Content); sum != typedMsg.Checksum {
-				logger.Info(fmt.Sprintf("invalid data checksum: %d (expected: %d)", sum, typedMsg.Checksum))
+			if sum := crc32.ChecksumIEEE(typedMsg.Content()); sum != typedMsg.Checksum() {
+				logger.Info(fmt.Sprintf("invalid data checksum: %d (expected: %d)", sum, typedMsg.Checksum()))
 				continue
 			}
 			received++
-			lastSeq = typedMsg.Seq
+			lastSeq = typedMsg.Seq()
 		case StopReadWrite:
 			if write {
 				// 返回成功接收的包数量

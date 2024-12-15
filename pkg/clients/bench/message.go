@@ -15,14 +15,10 @@ func ParseMessage(raw []byte) (Message, error) {
 
 	switch raw[0] {
 	case DataFlag:
-		if len(raw) < 37 {
-			return nil, fmt.Errorf("invalid data message length: %d (at lease 37 bytes)", len(raw))
+		if len(raw) < 9 {
+			return nil, fmt.Errorf("invalid data message length: %d (at lease 9 bytes)", len(raw))
 		}
-		return Data{
-			Seq:      binary.BigEndian.Uint32(raw[1:5]),
-			Checksum: binary.BigEndian.Uint32(raw[5:9]),
-			Content:  raw[9:],
-		}, nil
+		return Data(raw), nil
 	case PingFlag:
 		if len(raw) != 5 {
 			return nil, fmt.Errorf("invalid ping message: %v (must be 5 bytes)", raw)
@@ -84,29 +80,31 @@ const (
 
 // NewRandData 创建随机数据
 func NewRandData(seq uint32, size uint64) Data {
-	content := make([]byte, size-9)
+	if size < 9 {
+		size = 9
+	}
+	data := make(Data, size)
+	RenewRandData(data, seq)
+	return data
+}
+
+// RenewRandData 重新生成随机数据
+func RenewRandData(data Data, seq uint32) {
+	content := data[9:]
+	contentLen := len(content)
 	randData := rand.Uint64()
-	for i := uint64(0); i < size-9-7; i += 8 {
+	for i := 0; i < contentLen-7; i += 8 {
 		binary.BigEndian.PutUint64(content[i:], randData)
 	}
-	return Data{
-		Seq:      seq,
-		Checksum: crc32.ChecksumIEEE(content),
-		Content:  content,
-	}
+	data[0] = DataFlag
+	binary.BigEndian.PutUint32(data[1:5], seq)
+	binary.BigEndian.PutUint32(data[5:9], crc32.ChecksumIEEE(content))
 }
 
 // Data 数据消息
-type Data struct {
-	// 包序号
-	Seq uint32
-	// Content 的 CRC32 校验和
-	Checksum uint32
-	// 数据内容
-	Content []byte
-}
+type Data []byte
 
-var _ Message = Data{}
+var _ Message = Data(nil)
 
 // Type 返回消息类型
 func (d Data) Type() MessageType {
@@ -116,12 +114,22 @@ func (d Data) Type() MessageType {
 // Raw 返回消息原始数据
 // 格式： 0(byte) seq(uint32) checksum(uint32) content([]byte)
 func (d Data) Raw() []byte {
-	raw := make([]byte, len(d.Content)+9)
-	raw[0] = DataFlag
-	binary.BigEndian.PutUint32(raw[1:5], d.Seq)
-	binary.BigEndian.PutUint32(raw[5:9], d.Checksum)
-	copy(raw[9:], d.Content)
-	return raw
+	return d
+}
+
+// Seq 返回包序号
+func (d Data) Seq() uint32 {
+	return binary.BigEndian.Uint32(d[1:5])
+}
+
+// Checksum 返回内容的 CRC32 校验和
+func (d Data) Checksum() uint32 {
+	return binary.BigEndian.Uint32(d[5:9])
+}
+
+// Content 返回内容
+func (d Data) Content() []byte {
+	return d[9:]
 }
 
 // Ping ping 消息

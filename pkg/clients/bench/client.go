@@ -282,17 +282,17 @@ readDataLoop:
 				continue
 			}
 			// 校验
-			if typedMsg.Seq <= lastSeq {
-				logger.Info(fmt.Sprintf("invalid data seq: %d (last: %d)", typedMsg.Seq, lastSeq))
+			if typedMsg.Seq() <= lastSeq {
+				logger.Info(fmt.Sprintf("invalid data seq: %d (last: %d)", typedMsg.Seq(), lastSeq))
 				continue
 			}
-			if sum := crc32.ChecksumIEEE(typedMsg.Content); sum != typedMsg.Checksum {
-				logger.Info(fmt.Sprintf("invalid data checksum: %d (expected: %d)", sum, typedMsg.Checksum))
+			if sum := crc32.ChecksumIEEE(typedMsg.Content()); sum != typedMsg.Checksum() {
+				logger.Info(fmt.Sprintf("invalid data checksum: %d (expected: %d)", sum, typedMsg.Checksum()))
 				continue
 			}
 			received++
-			receivedSize += uint64(len(typedMsg.Content)) + 37
-			lastSeq = typedMsg.Seq
+			receivedSize += uint64(len(typedMsg))
+			lastSeq = typedMsg.Seq()
 		default:
 			logger.Info(fmt.Sprintf("WARN received wrong message type: %s", msg.Type()))
 		}
