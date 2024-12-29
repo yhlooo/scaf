@@ -2,6 +2,9 @@
 
 ---
 
+![GitHub License](https://img.shields.io/github/license/yhlooo/scaf)
+[![GitHub Release](https://img.shields.io/github/v/release/yhlooo/scaf)](https://github.com/yhlooo/scaf/releases/latest)
+
 # Scaf
 
 Scaf 通过配对和中继反向连接建立点到点的流传输，用于远程命令执行、文件传输等。
