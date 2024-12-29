@@ -14,6 +14,8 @@ Establishes point-to-point streams by pairing and relaying with reverse connecti
 
 In Scaf, a session involves three participants: the server, client A, and client B. Client A first connects to the server to create a "stream". Then, client B connects to the server to join the same "stream". Once both connections are established, the server forwards data read from client A to client B and data read from client B to client A, thus enabling point-to-point stream transmission between client A and client B.
 
+![scaf.drawio.svg](docs/images/scaf.drawio.svg)
+
 Scaf currently provides client implementations for remote command execution and file transfer, but its capabilities extend beyond that. By using the Scaf API, you can interact directly with the Scaf server, allowing you to transmit any data within a stream established by the server, enabling more point-to-point streaming applications.
 
 ## Installation
