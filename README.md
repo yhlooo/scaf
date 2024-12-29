@@ -6,6 +6,7 @@
 
 ![GitHub License](https://img.shields.io/github/license/yhlooo/scaf)
 [![GitHub Release](https://img.shields.io/github/v/release/yhlooo/scaf)](https://github.com/yhlooo/scaf/releases/latest)
+[![release](https://github.com/yhlooo/scaf/actions/workflows/release.yaml/badge.svg)](https://github.com/yhlooo/scaf/actions/workflows/release.yaml)
 
 # Scaf
 
