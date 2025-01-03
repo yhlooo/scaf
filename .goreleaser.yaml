@@ -4,7 +4,8 @@
 version: 2
 
 builds:
-  - binary: scaf
+  - id: scaf-bin
+    binary: scaf
     main: "./cmd/scaf"
     env:
       - "CGO_ENABLED=0"
@@ -20,7 +21,52 @@ builds:
 
 archives:
   - format: "tar.gz"
-    name_template: "{{ .Binary }}-v{{- .Version }}-{{- .Os }}-{{- .Arch }}"
+    name_template: "{{ .Binary }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+
+dockers:
+  - id: scaf-image-linux-amd64
+    goos: linux
+    goarch: amd64
+    ids:
+      - scaf-bin
+    image_templates:
+      - "ghcr.io/yhlooo/scaf:latest-amd64"
+      - "ghcr.io/yhlooo/scaf:v{{ .Version }}-amd64"
+    dockerfile: goreleaser.dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.source=https://github.com/yhlooo/scaf.git"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--platform=linux/amd64"
+  - id: scaf-image-linux-arm64
+    goos: linux
+    goarch: arm64
+    ids:
+      - scaf-bin
+    image_templates:
+      - "ghcr.io/yhlooo/scaf:latest-arm64"
+      - "ghcr.io/yhlooo/scaf:v{{ .Version }}-arm64"
+    dockerfile: goreleaser.dockerfile
+    build_flag_templates:
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.source=https://github.com/yhlooo/scaf.git"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--platform=linux/arm64"
+docker_manifests:
+  - id: scaf-image
+    name_template: "ghcr.io/yhlooo/scaf:v{{ .Version }}"
+    image_templates:
+      - "ghcr.io/yhlooo/scaf:v{{ .Version }}-amd64"
+      - "ghcr.io/yhlooo/scaf:v{{ .Version }}-arm64"
+  - id: scaf-image-latest
+    name_template: "ghcr.io/yhlooo/scaf:latest"
+    image_templates:
+      - "ghcr.io/yhlooo/scaf:latest-amd64"
+      - "ghcr.io/yhlooo/scaf:latest-arm64"
 
 changelog:
   sort: asc

@@ -1,8 +1,6 @@
 module github.com/yhlooo/scaf
 
-go 1.22.7
-
-toolchain go1.22.9
+go 1.22.10
 
 require (
 	github.com/bombsimon/logrusr/v4 v4.1.0
