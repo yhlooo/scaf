@@ -18,6 +18,14 @@ Scaf 目前提供用于远程命令执行和文件传输的客户端实现，但
 
 ## 安装
 
+### Docker
+
+直接使用镜像 [`ghcr.io/yhlooo/scaf`](https://github.com/yhlooo/scaf/pkgs/container/scaf) docker run 即可：
+
+```bash
+docker run -it --rm ghcr.io/yhlooo/scaf:latest --help
+```
+
 ### 通过二进制安装
 
 通过 [Releases](https://github.com/yhlooo/scaf/releases) 页面下载可执行二进制，解压并将其中 `scaf` 文件放置到任意 `$PATH` 目录下。

@@ -20,6 +20,14 @@ Scaf currently provides client implementations for remote command execution and 
 
 ## Installation
 
+### Docker
+
+docker run with image [`ghcr.io/yhlooo/scaf`](https://github.com/yhlooo/scaf/pkgs/container/scaf):
+
+```bash
+docker run -it --rm ghcr.io/yhlooo/scaf:latest --help
+```
+
 ### Binaries
 
 Download the executable binary from the [Releases](https://github.com/yhlooo/scaf/releases) page, extract it, and place the `scaf` file into any `$PATH` directory.
