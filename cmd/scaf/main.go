@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -52,4 +53,9 @@ func notify(parent context.Context, signals ...os.Signal) (context.Context, cont
 	}
 
 	return ctx, cancel
+}
+
+
+func hhh() {
+        fmt.Println("Hello World!")
 }
