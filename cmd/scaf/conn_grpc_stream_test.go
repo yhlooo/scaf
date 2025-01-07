@@ -5,5 +5,5 @@ import (
 )
 
 func TestNewGRPCStreamClientConnection(t *testing.T) {
-	_ = hhh()
+	hhh()
 }
